@@ -10,6 +10,16 @@ import struct, json, zlib
 HEADER_FORMAT = "!BIHHHI"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 
+MSG_TYPE_HELLO = 1
+MSG_TYPE_HELLO_ACK = 2
+MSG_TYPE_NACK = 3
+MSG_TYPE_KEY_EXCHANGE_PARAMETERS = 4
+MSG_TYPE_KEY_EXCHANGE_PUBLIC = 5
+MSG_TYPE_FRAME_DATA = 6
+MSG_TYPE_RETRANSMIT_REQ = 7
+MSG_TYPE_HANGUP = 8
+
+
 class VideoPacket:
     def __init__(self, msg_type, frame_num=0, seq_num=0, total_packets=0, payload=b"", checksum=0):
         """
