@@ -387,12 +387,9 @@ def make_app():
 
     btn_end_call = tk.Button(initiate_frame, text="End Call", command=end_call)
     btn_simulate_answer = tk.Button(initiate_frame, text="Simulate Answer", command=simulate_answer)
-    btn_back_home_from_initiate = tk.Button(initiate_frame, text="Back to Home",
-                                            command=lambda: show_frame(home_frame))
 
     btn_end_call.pack(side="left", padx=10, pady=10)
     btn_simulate_answer.pack(side="left", padx=10, pady=10)
-    btn_back_home_from_initiate.pack(side="left", padx=10, pady=10)
 
     def show_initiate_call(contact: Contact):
         nonlocal current_outgoing_contact
@@ -400,7 +397,7 @@ def make_app():
         initiate_contact_label.config(
             text=f"Calling {contact.name} (IP: {contact.ip_address}; MAC: {contact.mac_address})"
         )
-        initiate_status_label.config(text="Ringing...", fg="blue")
+        initiate_status_label.config(text=f"{contact.name} has been rung", fg="blue")
 
 
         client.send_hello(contact.ip_address, 3456)
