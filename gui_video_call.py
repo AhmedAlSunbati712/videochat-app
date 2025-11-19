@@ -442,6 +442,7 @@ def make_app():
             text=f"Connected to {contact.name} (IP: {contact.ip_address}; MAC: {contact.mac_address})"
         )
         call_status_label.config(text=status_text)
+        client.start_sender_thread()
         update_video_surface()  # Default to black placeholder until frames arrive
         show_frame(call_frame)
 
