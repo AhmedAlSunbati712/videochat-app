@@ -7,7 +7,8 @@ import cv2
 import math
 
 class ChatClient:
-    def __init__(self, host, port):
+    def __init__(self, host, port, gui_callback=None):
+        self.gui_callback = gui_callback
         self.host = host
         self.port = port
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -173,9 +174,7 @@ class ChatClient:
                 pkt.payload = decrypted_payload
 
         if pkt.msg_type == MSG_TYPE_HELLO:
-                print("handle_packet: Received HELLO. Sending back HELLO_ACK")
-                hello_ack_pkt = VideoPacket(MSG_TYPE_HELLO_ACK)
-                self.socket.sendto(hello_ack_pkt.to_bytes(), self.peer_address)
+                self.gui_callback(f"incoming call,{self.peer_address}")
             
         elif pkt.msg_type == MSG_TYPE_HELLO_ACK:
                 # If we get the hello ack, that means we are the initiator.
@@ -201,7 +200,17 @@ class ChatClient:
 
                 # unimplemented yet
                 return
-                
+
+    def accept_call(self):
+        """
+        Description: Called by the GUI when the user accepts an incoming call.
+        Currently does nothing as the HELLO_ACK is already sent when the HELLO is received.
+        """
+        print("handle_packet: Received HELLO. Sending back HELLO_ACK")
+        hello_ack_pkt = VideoPacket(MSG_TYPE_HELLO_ACK)
+        self.socket.sendto(hello_ack_pkt.to_bytes(), self.peer_address)
+
+
     def _initiator_start_key_exchange(self):
         """
         Description: This function is called once the initiator receives a HELLO_ACK back. It generates parameters

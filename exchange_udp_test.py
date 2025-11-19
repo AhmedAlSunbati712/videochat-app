@@ -30,6 +30,13 @@ def parse_args():
 
 def main():
     global user_type, peer_ip, peer_port, our_ip, our_port
+
+
+    
+
+
+
+
     parse_args()
     
     print(f"Starting {user_type} on port {our_port} ")
