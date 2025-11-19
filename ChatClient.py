@@ -91,19 +91,41 @@ class ChatClient:
         # Also, initially all communications are not encrypted
         # from_bytes already expects the data to be decrypted
         # I think this is what we need to do
-        if self.key_exchange_complete.is_set():
-            data = DH.decrypt(self.derived_key, data)
         pkt = VideoPacket.from_bytes(data) 
-        
+        if pkt is None:
+            print("handle_packet: Dropped corrupt/truncated packet.")
+            return
         if pkt is None:
             print("handle_packet: Received a corrupt or invalid packet.")
             return
+
+        # We only decrypt if the key exchange is done AND the message type is one that is encrypted.
+        if self.key_exchange_complete.is_set():
+            
+            # List of message types that should be encrypted
+            encrypted_types = [
+                VideoPacket.MSG_TYPE_FRAME_DATA,
+                VideoPacket.MSG_TYPE_HANGUP,
+                VideoPacket.MSG_TYPE_NACK,
+                VideoPacket.MSG_TYPE_RETRANSMIT_REQ
+            ]
+            
+            if pkt.msg_type in encrypted_types:
+                # The pkt.payload currently holds Nonce + Ciphertext
+                # We overwrite it with the decrypted Raw Data
+                decrypted_payload = DH.decrypt(self.derived_key, pkt.payload)
+                
+                if decrypted_payload is None:
+                    print("handle_packet: Decryption failed (tampered/corrupt). Dropping.")
+                    return
+
+                pkt.payload = decrypted_payload
 
         match pkt.msg_type:
             case VideoPacket.MSG_TYPE_HELLO:
                 print("handle_packet: Received HELLO. Sending back HELLO_ACK")
                 hello_ack_pkt = VideoPacket(MSG_TYPE_HELLO_ACK)
-                self.socket.sendto(hello_ack_pkt.to_bytes(), self.self.peer_address)
+                self.socket.sendto(hello_ack_pkt.to_bytes(), self.peer_address)
             
             case VideoPacket.MSG_TYPE_HELLO_ACK:
                 # If we get the hello ack, that means we are the initiator.
