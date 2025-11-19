@@ -179,6 +179,7 @@ class ChatClient:
         elif pkt.msg_type == MSG_TYPE_HELLO_ACK:
                 # If we get the hello ack, that means we are the initiator.
                 # Start the initiator sequence of key exchange
+                self.gui_callback("hello_ack_received")
                 self._initiator_start_key_exchange()
         elif pkt.msg_type == MSG_TYPE_KEY_EXCHANGE_PARAMETERS:
                 # The initiator will always be the one to send out the parameters

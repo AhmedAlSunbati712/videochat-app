@@ -120,6 +120,17 @@ def make_app():
             if contact is not None:
                 root.after(0, lambda c=contact: show_incoming_call(c))
 
+        elif msg == "hello_ack_received":
+            # The initiator received HELLO_ACK, simulate the answer
+            root.after(0, lambda: simulate_answer())
+
+        elif msg.startswith("image"):
+            # Video frame received
+            _, image = msg.split(",", 1)
+            # Convert the image data back to PhotoImage
+            photo = tk.PhotoImage(data=image)
+            root.after(0, lambda p=photo: update_video_surface(p))
+
         
 
 
@@ -407,6 +418,7 @@ def make_app():
 
     video_surface = tk.Label(call_frame, bd=2, relief="sunken")
     video_surface.pack(padx=10, pady=10)
+    
 
     tk.Label(call_frame,
              text="Live video stream renders in the window above.",
@@ -447,9 +459,9 @@ def make_app():
     btn_end_active.pack(pady=5, padx=10, anchor="w")
 
     # Expose helpers so the networking layer can update the call UI when video frames arrive.
-    root.render_video_frame = update_video_surface
-    root.show_call_screen = show_active_call
-    root.end_call_screen = end_active_call
+    # root.render_video_frame = update_video_surface
+    # root.show_call_screen = show_active_call
+    # root.end_call_screen = end_active_call
     root.logic_callback = logic_callback
     root.set_chat_client = set_chat_client
 
