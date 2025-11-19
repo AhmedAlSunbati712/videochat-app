@@ -3,6 +3,8 @@ import threading
 import time
 import DH  
 from VideoPacket import * 
+import cv2
+import math
 
 class ChatClient:
     def __init__(self, host, port):
@@ -28,14 +30,20 @@ class ChatClient:
         # that happens in key exchange are handled in the key exchange helper
         # functions)
         self.receiver_thread = threading.Thread(target=self._receiver_loop, daemon=True)
-        self.sender_thread = threading.Thread(target=self._sender_loop, daemon=True)
+        self.sender_thread = threading.Thread(target=self._sender_loop, daemon=True, )
 
-    def start(self):
+    def start_sender_thread(self):
+        """
+        Description: Starts the sender thread for sending video frames.
+        """
+        self.sender_thread.start()
+        print("Sender thread started.")
+
+    def start_receiver_thread(self):
         """
         Description: Starts the receiver and sender threads.
         """
         self.receiver_thread.start()
-        self.sender_thread.start()
         print("Threads started.")
 
     def stop(self):
@@ -77,7 +85,50 @@ class ChatClient:
         Unimplmented for now
         Description: Used for sending video frame packets
         """
-        return
+        image_num = 0
+        while self.running.is_set():
+
+            cap = cv2.VideoCapture(1)
+
+            # Warmup
+            for _ in range(5):
+                cap.read()
+
+            ret, frame = cap.read()
+            cap.release()
+
+            if not ret:
+                raise RuntimeError("Failed to capture image")
+
+
+            h, w = frame.shape[:2]
+            scale = min(400 / w, 400 / h, 1.0)
+            if scale < 1.0:
+                new_w = int(w * scale)
+                new_h = int(h * scale)
+                frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+            encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), int(70)]
+            success, buffer = cv2.imencode(".jpg", frame, encode_params)
+            if not success:
+                raise RuntimeError("Failed to encode image")
+
+            img_bytes = buffer.tobytes()
+            image_size = len(img_bytes)
+            frame_count = math.ceil(image_size / 1400)
+            print(f"Frame count: {frame_count}")
+            for i in range(frame_count):
+                frame_bytes_unencrypted = img_bytes[i*1400:(i+1)*1400]
+                frame_bytes_encrypted = DH.encrypt(self.derived_key,frame_bytes_unencrypted)
+                img_pkt = VideoPacket(MSG_TYPE_FRAME_DATA,image_num,i,frame_count,frame_bytes_encrypted)
+                self.socket.sendto(img_pkt.to_bytes(), self.peer_address)
+
+
+            image_num += 1
+            time.sleep(2)
+
+
+
 
     def handle_packet(self, data):
         """
@@ -121,39 +172,33 @@ class ChatClient:
 
                 pkt.payload = decrypted_payload
 
-        match pkt.msg_type:
-            case VideoPacket.MSG_TYPE_HELLO:
+        if pkt.msg_type == MSG_TYPE_HELLO:
                 print("handle_packet: Received HELLO. Sending back HELLO_ACK")
                 hello_ack_pkt = VideoPacket(MSG_TYPE_HELLO_ACK)
                 self.socket.sendto(hello_ack_pkt.to_bytes(), self.peer_address)
             
-            case VideoPacket.MSG_TYPE_HELLO_ACK:
+        elif pkt.msg_type == MSG_TYPE_HELLO_ACK:
                 # If we get the hello ack, that means we are the initiator.
                 # Start the initiator sequence of key exchange
                 self._initiator_start_key_exchange()
-                
-            case VideoPacket.MSG_TYPE_KEY_EXCHANGE_PARAMETERS:
+        elif pkt.msg_type == MSG_TYPE_KEY_EXCHANGE_PARAMETERS:
                 # The initiator will always be the one to send out the parameters
                 # and the listener is always going to be the one to receive them
                 self._listener_handle_parameters(pkt.payload)
-                
-            case VideoPacket.MSG_TYPE_KEY_EXCHANGE_PUBLIC:
+        elif pkt.msg_type ==  MSG_TYPE_KEY_EXCHANGE_PUBLIC:
                 # Both the listener and the initiator have to call this
                 self._handle_public_key(pkt.payload)
-            
-            case VideoPacket.MSG_TYPE_FRAME_DATA:
+        elif pkt.msg_type ==  MSG_TYPE_FRAME_DATA:
                 # unimplemented yet
                 return
-            
-            case VideoPacket.MSG_TYPE_HANGUP:
+        elif pkt.msg_type ==  MSG_TYPE_HANGUP:
                 # unimplemented yet
                 return
-            
-            case VideoPacket.MSG_TYPE_NACK:
+        elif pkt.msg_type ==  MSG_TYPE_NACK:
                 # unimplemented yet
                 return
-            
-            case VideoPacket.MSG_TYPE_RETRANSMIT_REQ:
+        elif pkt.msg_type ==  MSG_TYPE_RETRANSMIT_REQ:
+
                 # unimplemented yet
                 return
                 
@@ -229,6 +274,9 @@ class ChatClient:
         self.dh_private_key = None
         
         self.key_exchange_complete.set()
+
+
+        print(self.derived_key)
         print("KEY EXCHANGE COMPLETE")
 
     def send_hello(self, peer_ip, peer_port):

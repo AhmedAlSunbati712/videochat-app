@@ -36,7 +36,7 @@ def main():
     
     # Initialize the client
     chat_client = ChatClient(host=our_ip, port=our_port)
-    chat_client.start()
+    chat_client.start_receiver_thread()
 
     if user_type == "initiator":
         print(f"Initiating call to {peer_ip}:{peer_port}")
@@ -50,6 +50,8 @@ def main():
         while True:
             time.sleep(1)
             if chat_client.key_exchange_complete.is_set():
+                chat_client.start_sender_thread()
+
                 # Once connected, we should send the video frames here
                 # just to test the encryption
                 pass 
