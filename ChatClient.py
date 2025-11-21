@@ -58,8 +58,11 @@ class ChatClient:
         Description: Starts the receiver and sender threads.
         """
         self.receiver_thread.start()
+        self.check_retransmit_req_thread.start()
+        self.display_thread.start()
         print("Threads started.")
 
+    
     def stop(self):
         """
         Description: Signals all threads to stop and closes the socket.
