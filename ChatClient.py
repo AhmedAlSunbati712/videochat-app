@@ -5,10 +5,12 @@ import DH
 from VideoPacket import * 
 import cv2
 import math
+import heapq
+from collections import defaultdict
 
 class ChatClient:
     def __init__(self, host, port, gui_callback=None):
-        self.gui_callback = gui_callback
+        self.gui_callback = gui_callback # self.gui
         self.host = host
         self.port = port
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -26,12 +28,23 @@ class ChatClient:
         self.dh_private_key = None
         self.derived_key = None 
         
+        # State variables for listener loop
+        self.frames_in_progress = {} # frame_number -> List[(sequence_number, packet_data)]
+        self.ready_frames = [] # min-heap elements: (frame_number, frame_data)
+        self.frame_first_packet_time = [] # implmenting a fifo queue. Elements of form (frame_number, time of first packet arrival)
+        self.frame_retransmit_req_record = defaultdict(int) # frame_number -> number of retransmit requests requested
+        self.next_expected_frame = -1 # To figure out which frame we expect to receive next
+        self.frame_timeout = 0.2 # How long should we wait before asking for a retransmit?
+        self.max_retransmits = 3 # How many times should we ask for a retransmit before dropping the frame all together?
+        
         # Two threads, one for receiving and the other for sending packets
         # (the sender only works for sending video frame packets. All the sending
         # that happens in key exchange are handled in the key exchange helper
         # functions)
         self.receiver_thread = threading.Thread(target=self._receiver_loop, daemon=True)
-        self.sender_thread = threading.Thread(target=self._sender_loop, daemon=True, )
+        self.sender_thread = threading.Thread(target=self._sender_loop, daemon=True)
+        self.check_retransmit_req_thread = threading.Thread(target=self._retransmit_request_loop, daemon=True)
+        self.display_thread = threading.Thread(target=self.display_thread, daemon=True)
 
     def start_sender_thread(self):
         """
@@ -190,7 +203,7 @@ class ChatClient:
                 # Both the listener and the initiator have to call this
                 self._handle_public_key(pkt.payload)
         elif pkt.msg_type ==  MSG_TYPE_FRAME_DATA:
-                # unimplemented yet
+                self._frame_data_packet_handler(pkt)
                 return
         elif pkt.msg_type ==  MSG_TYPE_HANGUP:
                 # unimplemented yet
@@ -201,7 +214,94 @@ class ChatClient:
         elif pkt.msg_type ==  MSG_TYPE_RETRANSMIT_REQ:
                 # unimplemented yet
                 return
-
+            
+    def _frame_data_packet_handler(self, pkt: VideoPacket):
+        def assemble_frame(frame_num, seq_data_pairs):
+            """
+            Description: Helper functionality for assembling frame's data after all packets arrive.
+            """
+            sorted_packets = sorted(seq_data_pairs, key=lambda x: x[0])
+            frame_data = b""
+            for (seq_number, packet_data) in sorted_packets:
+                frame_data += packet_data
+            return frame_data
+        
+        frame_number = pkt.frame_num
+        if (frame_number <= self.next_expected_frame):
+            return
+        seq_number = pkt.seq_num
+        packet_video_data = pkt.payload
+        total_packets = pkt.total_packets
+        
+        # If this is the first packet we receive from this frame
+        if frame_number not in self.frames_in_progress.keys():
+            self.frames_in_progress[frame_number] = []
+            self.frame_first_packet_time.append((frame_number, time.time()))
+            self.frame_retransmit_req_record[frame_number] = 0
+        # Append this packet to the list of packets associated with this frame
+        self.frames_in_progress[frame_number].append((seq_number, packet_video_data))
+        
+        # If we received all of the packets for this frame
+        if len(self.frames_in_progress[frame_number])  == total_packets:
+            frame_data = assemble_frame(frame_number, self.frames_in_progress[frame_number]) # Assemble the frame
+            
+            # remove from frame_first_packet_time (search array and remove element with element[0] == frame_number)
+            self._remove_frame_time_record(frame_number)
+            del self.frames_in_progress[frame_number] # remove from frames_in_progress dict
+            del self.frame_retransmit_req_record[frame_number] # remove from retransmit_req_record
+            
+            heapq.heappush(self.ready_frames, (frame_number, frame_data)) # push onto the heap to be consumed by the display thread
+            # self.next_expected_frame += 1 # increment counter for next_frame. Actually, i think should be the responsibility of the 
+        
+    def _remove_frame_time_record(self, frame_num):
+        """
+        search array and remove element with element[0] == frame_number
+        found it useful to have this helper function since this routine is used
+        in a couple of places
+        """
+        for i in range(len(self.frame_first_packet_time)):
+            frame_time_record = self.frame_first_packet_time[i]
+            if frame_time_record[0] == frame_num:
+                self.frame_first_packet_time.pop(i)
+                break
+    def _retransmit_request_loop(self):
+        def send_retransmit_request(frame_num):
+            pkt = VideoPacket(msg_type=MSG_TYPE_RETRANSMIT_REQ, frame_num=frame_num)
+            socket.sendto(pkt.to_bytes(), self.peer_address)
+        
+        # Check if we reached timeout on any frame   
+        for i in range(len(self.frame_first_packet_time)):
+            frame_time_record = self.frame_first_packet_time[i]
+            frame_num = frame_time_record[0]
+            time_elapsed = time.time() - frame_time_record[1]
+            # If timed out
+            if time_elapsed >= self.frame_timeout:
+                self._remove_frame_time_record(frame_num) # Pop the time record so we prepare for the next first packet associated with the frame
+                self.frame_retransmit_req_record[frame_num] += 1 # remove from retransmit_req_record
+                del self.frames_in_progress[frame_num] # remove from frames_in_progress dict (since we are receiving the packets all over again)
+                
+                # Only retransmit if we haven't reached the maximum number of retransmits allowed
+                if self.frame_retransmit_req_record[frame_num] < self.max_retransmits:
+                     print(f"[*] Sending a retransmit request for frame number {frame_num}")
+                     send_retransmit_request(frame_num)
+                else:
+                    # If we reached the maximum number of requests, just drop the frame and move on to waiting on the next one
+                    print(f"[*] Timed out for frame {frame_num}.")
+                    self.next_expected_frame += 1
+                    del self.frames_in_progress[frame_num] # remove from frames_in_progress dict
+                    del self.frame_retransmit_req_record[frame_num]  # remove from retransmit_req_record
+                    self._remove_frame_time_record(frame_num)
+                    self.next_expected_frame += 1
+        time.sleep(0.1)
+        
+    def display_frames_thread(self):
+        if len(self.ready_frames) != 0 and self.ready_frames[0][0] == self.next_expected_frame:
+            frame_num, frame_data = heapq.heappop(self.ready_frames)
+            self.gui_callback(f"peerimage: {frame_data}")
+            
+                
+                
+        
     def accept_call(self):
         """
         Description: Called by the GUI when the user accepts an incoming call.
