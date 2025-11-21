@@ -152,14 +152,14 @@ def make_app():
         frame.tkraise()
 
     # ========== HOME SCREEN ==========
-    tk.Label(home_frame, text="Welcome to Video Call App!",
+    tk.Label(home_frame, text="Welcome to Encrypted Video Call App!",
              font=("Arial", 16, "bold")).pack(pady=10, anchor="w", padx=10)
 
     tk.Label(home_frame, text="Press the buttons below to navigate.",
              anchor="w").pack(pady=2, anchor="w", padx=10)
 
     status_label = tk.Label(home_frame,
-                            text="Currently listening for calls *",
+                            text="Currently listening for calls...",
                             anchor="w")
     status_label.pack(pady=2, anchor="w", padx=10)
 
@@ -398,7 +398,7 @@ def make_app():
         initiate_contact_label.config(
             text=f"Calling {contact.name} (IP: {contact.ip_address}; MAC: {contact.mac_address})"
         )
-        initiate_status_label.config(text=f"{contact.name} has been rung", fg="blue")
+        initiate_status_label.config(text=f"{contact.name} has been rung", fg="yellow")
 
 
         client.send_hello(contact.ip_address, 3456)
