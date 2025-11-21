@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import ast
 import os
 
+
 from ChatClient import ChatClient
 
 
@@ -94,7 +95,7 @@ def make_app():
         nonlocal chat_client
         chat_client = client
 
-    def logic_callback(msg: str):
+    def logic_callback(msg: str, image_data: bytes = None):
         """
         This is called from the network thread.
         It MUST NOT touch Tk directly.
@@ -122,15 +123,25 @@ def make_app():
 
         elif msg == "hello_ack_received":
             # The initiator received HELLO_ACK, simulate the answer
-            root.after(0, lambda: simulate_answer())
+            # root.after(0, lambda: simulate_answer())
+            show_active_call(current_outgoing_contact, "Outgoing call connected.")
 
-        elif msg.startswith("image"):
+        elif msg.startswith("peerimage"):
             # Video frame received
             _, image = msg.split(",", 1)
             # Convert the image data back to PhotoImage
             photo = tk.PhotoImage(data=image)
+
             root.after(0, lambda p=photo: update_video_surface(p))
 
+        elif msg.startswith("selfimage"):
+            # Self video frame captured
+            # _, image = msg.split(",", 1)
+            # photo = tk.PhotoImage(data=image)
+            image_data_bytes = io.BytesIO(image_data)
+            photo = tk.PhotoImage(data=image_data_bytes.read())
+
+            root.after(0, lambda p=photo: update_self_video_surface(p))
         
 
 
@@ -375,21 +386,11 @@ def make_app():
         current_outgoing_contact = None
         show_frame(home_frame)
 
-    def simulate_answer():
-        nonlocal current_outgoing_contact
-        # For testing: simulate the remote answering
-        initiate_status_label.config(text="Connected", fg="green")
-        if not current_outgoing_contact:
-            messagebox.showwarning("Call", "No outgoing call to connect.")
-            return
-        messagebox.showinfo("Call", "Call connected.")
-        show_active_call(current_outgoing_contact, "Outgoing call connected.")
 
     btn_end_call = tk.Button(initiate_frame, text="End Call", command=end_call)
-    btn_simulate_answer = tk.Button(initiate_frame, text="Simulate Answer", command=simulate_answer)
+
 
     btn_end_call.pack(side="left", padx=10, pady=10)
-    btn_simulate_answer.pack(side="left", padx=10, pady=10)
 
     def show_initiate_call(contact: Contact):
         nonlocal current_outgoing_contact
@@ -415,6 +416,9 @@ def make_app():
 
     video_surface = tk.Label(call_frame, bd=2, relief="sunken")
     video_surface.pack(padx=10, pady=10)
+
+    self_video_surface = tk.Label(call_frame, bd=2, relief="sunken")
+    self_video_surface.pack(padx=10, pady=5)
     
 
     tk.Label(call_frame,
@@ -434,6 +438,17 @@ def make_app():
         video_surface.configure(image=photo)
         video_surface.image = photo
         video_photo = photo
+
+    def update_self_video_surface(image=None):
+        """Update the self video surface with a provided frame or a black placeholder."""
+        if image is None:
+            photo = tk.PhotoImage(width=160, height=90)
+            photo.put("black", to=(0, 0, 160, 90))
+        else:
+            photo = image
+
+        self_video_surface.configure(image=photo)
+        self_video_surface.image = photo
 
     def show_active_call(contact: Contact, status_text: str):
         nonlocal active_call_contact

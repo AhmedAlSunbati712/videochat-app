@@ -126,8 +126,9 @@ class ChatClient:
 
 
             image_num += 1
+            print("Captured and sent a frame")
+            self.gui_callback(f"selfimage,{img_bytes}")
             time.sleep(2)
-
 
 
 
@@ -198,7 +199,6 @@ class ChatClient:
                 # unimplemented yet
                 return
         elif pkt.msg_type ==  MSG_TYPE_RETRANSMIT_REQ:
-
                 # unimplemented yet
                 return
 
