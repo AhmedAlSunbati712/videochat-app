@@ -34,7 +34,7 @@ class ChatClient:
         # ========== State variables for listener loop ==============
         self.frames_in_progress = {} # frame_number -> List[(sequence_number, packet_data)]
         self.ready_frames = [] # min-heap elements: (frame_number, frame_data)
-        self.frame_first_packet_time = [] # implmenting a fifo queue. Elements of form (frame_number, time of first packet arrival)
+        self.frame_first_packet_time = {} # implmenting a fifo queue. Elements of form (frame_number, time of first packet arrival)
         self.frame_retransmit_req_record = defaultdict(int) # frame_number -> number of retransmit requests requested
         self.next_expected_frame = 0 # To figure out which frame we expect to receive next
         self.frame_timeout = 0.2 # How long should we wait before asking for a retransmit?
@@ -301,7 +301,7 @@ class ChatClient:
         if frame_number not in self.frames_in_progress.keys():
             # Initialize entries for this frame
             self.frames_in_progress[frame_number] = []
-            self.frame_first_packet_time.append((frame_number, time.time()))
+            self.frame_first_packet_time[frame_number] = time.time()
             self.frame_retransmit_req_record[frame_number] = 0
         
         # Append this packet to the list of packets associated with this frame
@@ -343,19 +343,15 @@ class ChatClient:
             self.socket.sendto(pkt.to_bytes(), self.peer_address)
         while self.running.is_set():
             # Check if we reached timeout on any frame   
-            i = 0
-            while i < len(self.frame_first_packet_time):
-            # for i in range(len(self.frame_first_packet_time)):
-                frame_time_record = self.frame_first_packet_time[i]
-                frame_num = frame_time_record[0]
-                time_elapsed = time.time() - frame_time_record[1]
+            for frame_num in self.frame_first_packet_time.keys():
+                time_elapsed = time.time() - self.frame_first_packet_time[frame_num]  
                 
                 # If timed out
                 if time_elapsed >= self.frame_timeout:
                     # Clean up since we are gonna ask for a retransmit for this frame
-                    self._remove_frame_time_record(frame_num) # Pop the time record so we prepare for the next first packet associated with the frame
+                    del self.frame_first_packet_time[frame_num] # Pop the time record so we prepare for the next first packet associated with the frame
                     del self.frames_in_progress[frame_num] # remove from frames_in_progress dict (since we are receiving the packets all over again)
-                    self.frame_retransmit_req_record[frame_num] += 1 # increment retransmit request record
+                    self.frame_retransmit_req_record += 1 # increment retransmit request record
 
                     # Only retransmit if we haven't reached the maximum number of retransmits allowed
                     if self.frame_retransmit_req_record[frame_num] <= self.max_retransmits:
@@ -367,9 +363,8 @@ class ChatClient:
                         self.next_expected_frame += 1
                         del self.frames_in_progress[frame_num] # remove from frames_in_progress dict
                         del self.frame_retransmit_req_record[frame_num]  # remove from retransmit_req_record
-                        self._remove_frame_time_record(frame_num)
+                        del self.frame_first_packet_time[frame_num]
                         self.next_expected_frame += 1
-                    i += 1
                 time.sleep(0.1)
                 
         
@@ -515,8 +510,4 @@ class ChatClient:
         found it useful to have this helper function since this routine is used
         in a couple of places
         """
-        for i in range(len(self.frame_first_packet_time)):
-            frame_time_record = self.frame_first_packet_time[i]
-            if frame_time_record[0] == frame_num:
-                self.frame_first_packet_time.pop(i)
-                break
+        del self.frame_first_packet_time[frame_num]
