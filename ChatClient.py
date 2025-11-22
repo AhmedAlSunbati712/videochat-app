@@ -109,8 +109,8 @@ class ChatClient:
         """
         image_num = 0
         while self.running.is_set():
-
-            cap = cv2.VideoCapture(1)
+            
+            cap = cv2.VideoCapture(0)
 
             # Warmup
             for _ in range(5):
@@ -139,7 +139,7 @@ class ChatClient:
             image_size = len(img_bytes)
             frame_count = math.ceil(image_size / 1400)
             packets_for_this_frame = [] # Need to store to hold in history
-            
+            print(f"captured image {image_num}")
             print(f"Frame count: {frame_count}")
             # Send a frame in chunks
             for i in range(frame_count):
@@ -161,7 +161,7 @@ class ChatClient:
             image_num += 1
             print("Captured and sent a frame")
             self.gui_callback(f"selfimage,{img_bytes}")
-            time.sleep(0.1)
+            time.sleep(0.01)
 
 
 
