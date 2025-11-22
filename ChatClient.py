@@ -108,14 +108,14 @@ class ChatClient:
         """
         Description: Used for sending video frame packets
         """
-        image_num = 0
+        frame_num = 0
 
         cap = cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
         cap.set(cv2.CAP_PROP_FPS, 60)
         while self.running.is_set():
             ret, frame = cap.read()
             if not ret:
-                raise RuntimeError("[!] Failed to capture image")
+                raise RuntimeError("[!] Failed to capture frame")
 
             h, w = frame.shape[:2]
             scale = min(400 / w, 400 / h, 1.0)
@@ -127,56 +127,48 @@ class ChatClient:
             encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), int(70)]
             success, buffer = cv2.imencode(".jpg", frame, encode_params)
             if not success:
-                raise RuntimeError("Failed to encode image")
+                raise RuntimeError("[!] Failed to encode frame")
             
-            img_bytes = buffer.tobytes()
-            image_size = len(img_bytes)
-            frame_count = math.ceil(image_size / 1400)
+            frame_bytes = buffer.tobytes()
+            frame_size = len(frame_bytes)
+            frame_pkts_count = math.ceil(frame_size / 1400)
             packets_for_this_frame = [] # Need to store to hold in history
-            print(f"captured image {image_num}")
-            print(f"Frame count: {frame_count}")
+            print(f"[*] Captured frame: {frame_num}")
+            print(f"[*] Frame count: {frame_pkts_count}")
+            
             # Send a frame in chunks
-            for i in range(frame_count):
+            for i in range(frame_pkts_count):
                 # Chunk and encrypt each chunk
-                chunk_bytes_unencrypted = img_bytes[i*1400:(i+1)*1400]
+                chunk_bytes_unencrypted = frame_bytes[i*1400:(i+1)*1400]
                 chunk_bytes_encrypted = DH.encrypt(self.derived_key,chunk_bytes_unencrypted)
                 
                 # Create the packet
-                chunk_pkt = VideoPacket(MSG_TYPE_FRAME_DATA,image_num,i,frame_count,chunk_bytes_encrypted)
+                chunk_pkt = VideoPacket(msg_type=MSG_TYPE_FRAME_DATA, frame_num=frame_num, seq_num=i, total_packets=frame_pkts_count, payload=chunk_bytes_encrypted)
                 packets_for_this_frame.append(chunk_pkt)
                 
                 self.socket.sendto(chunk_pkt.to_bytes(), self.peer_address) # Send immediately
             
             # Use a mutex lock to store the packets for this frame
             with self.frames_history_lock:
-                self.sent_frames_history.append((image_num, packets_for_this_frame))
+                self.sent_frames_history.append((frame_num, packets_for_this_frame))
 
-
-            image_num += 1
-            print("Captured and sent a frame")
-            self.gui_callback(f"selfimage,{img_bytes}")
-            # time.sleep(0.01)
+            frame_num += 1
+            print(f"[*] Captured and sent frame {frame_num}")
+            self.gui_callback(f"selfimage,{frame_bytes}")
 
 
 
     def handle_packet(self, data):
         """
-        Description: Deserializes and routes packets to the correct logic.
-        
+        Description: Deserializes, decrypts and routes packets to the correct logic.
+        ========= Parameters ========
         @param data (bytes): The VideoPacket data in bytes to be handled.
+        ========= Returns ========
         @return None
         """
-
-        # Need to handle this thing. from_bytes doesnt take key.
-        # Also, initially all communications are not encrypted
-        # from_bytes already expects the data to be decrypted
-        # I think this is what we need to do
         pkt = VideoPacket.from_bytes(data) 
         if pkt is None:
-            print("handle_packet: Dropped corrupt/truncated packet.")
-            return
-        if pkt is None:
-            print("handle_packet: Received a corrupt or invalid packet.")
+            print("[!] handle_packet: Dropped corrupt/truncated packet.")
             return
 
         # We only decrypt if the key exchange is done AND the message type is one that is encrypted.
@@ -186,7 +178,6 @@ class ChatClient:
             encrypted_types = [
                 MSG_TYPE_FRAME_DATA,
                 MSG_TYPE_HANGUP,
-                MSG_TYPE_NACK,
                 MSG_TYPE_RETRANSMIT_REQ
             ]
             
@@ -196,7 +187,7 @@ class ChatClient:
                 decrypted_payload = DH.decrypt(self.derived_key, pkt.payload)
                 
                 if decrypted_payload is None:
-                    print("handle_packet: Decryption failed (tampered/corrupt). Dropping.")
+                    print("[!] handle_packet: Decryption failed (tampered/corrupt). Dropping.")
                     return
 
                 pkt.payload = decrypted_payload
@@ -209,16 +200,20 @@ class ChatClient:
                 # Start the initiator sequence of key exchange
                 self.gui_callback("hello_ack_received")
                 self._initiator_start_key_exchange()
+                
         elif pkt.msg_type == MSG_TYPE_KEY_EXCHANGE_PARAMETERS:
                 # The initiator will always be the one to send out the parameters
                 # and the listener is always going to be the one to receive them
                 self._listener_handle_parameters(pkt.payload)
+                
         elif pkt.msg_type ==  MSG_TYPE_KEY_EXCHANGE_PUBLIC:
                 # Both the listener and the initiator have to call this
                 self._handle_public_key(pkt.payload)
+                
         elif pkt.msg_type ==  MSG_TYPE_FRAME_DATA:
                 self._frame_data_packet_handler(pkt)
                 return
+            
         elif pkt.msg_type ==  MSG_TYPE_HANGUP:
                 # unimplemented yet
                 return
@@ -230,6 +225,17 @@ class ChatClient:
                 return
             
     def handle_retransmit(self, pkt: VideoPacket):
+        """
+        Description: Handles retransmit requests. It fetches the frame number to be sent from
+                     pkt.frame_num. It then locks the frame_history lock so that it could extract
+                     the frame data from self.sent_frames_history without competing with the video
+                     capture thread in race conditions (the capture thread modifies the history with
+                     every new frame it takes).
+        ============== Parameters ==============
+        @param pkt: The VideoPacket object associated with the retransmit request that we received.
+        ============== Returns ============
+        @return void, but sends back to peer the requested frame back if not found.
+        """
         found_frame = False
         packets_to_resend = []
         frame_num = pkt.frame_num
@@ -257,9 +263,25 @@ class ChatClient:
             print(f"[!] Couldn't find frame {frame_num} in history! It's too old!")
         
     def _frame_data_packet_handler(self, pkt: VideoPacket):
-        def assemble_frame(frame_num, seq_data_pairs):
+        """
+        Description: Handler for packet of type MSG_TYPE_FRAME_DATA. If the frame in this packet is an old
+                     frame, drop it. Otherwise, add its packet to the other packets associated with the frame
+                     in the dictionary self.frames_in_progress. It checks if we received all the packets for the
+                     frame after each packet. If so, it assembles the frame in order and pushes it on the min-heap
+                     to be displayed.
+        ================ Parameters ================
+        @param pkt: The frame packet to be processed.
+        ================ Returns ==================
+        @return void
+        """
+        def assemble_frame(seq_data_pairs):
             """
             Description: Helper functionality for assembling frame's data after all packets arrive.
+            =========== Parameteers =======
+            @param seq_data_pairs (List): An array of (seq_num, pkt.payload) associated with a frame.
+                                          Array is sorted by key=seq_num.
+            ========== Returns ========
+            @return frame_data (bytes): The frame data assembled in order.
             """
             sorted_packets = sorted(seq_data_pairs, key=lambda x: x[0])
             frame_data = b""
@@ -267,47 +289,57 @@ class ChatClient:
                 frame_data += packet_data
             return frame_data
         
+        # Retrieve frame_num and check if it's an old frame
         frame_number = pkt.frame_num
         if (frame_number < self.next_expected_frame):
-            return
+            return # drop
+        
+        # pkt header
         seq_number = pkt.seq_num
         packet_video_data = pkt.payload
         total_packets = pkt.total_packets
         
         # If this is the first packet we receive from this frame
         if frame_number not in self.frames_in_progress.keys():
+            # Initialize entries for this frame
             self.frames_in_progress[frame_number] = []
             self.frame_first_packet_time.append((frame_number, time.time()))
             self.frame_retransmit_req_record[frame_number] = 0
+        
         # Append this packet to the list of packets associated with this frame
         self.frames_in_progress[frame_number].append((seq_number, packet_video_data))
         
         # If we received all of the packets for this frame
         if len(self.frames_in_progress[frame_number])  == total_packets:
             print(f"[!] Received a full image! Frame number is {frame_number}")
-            frame_data = assemble_frame(frame_number, self.frames_in_progress[frame_number]) # Assemble the frame
+            frame_data = assemble_frame(self.frames_in_progress[frame_number]) # Assemble the frame
             
-            # remove from frame_first_packet_time (search array and remove element with element[0] == frame_number)
-            self._remove_frame_time_record(frame_number)
+            # Clean up
+            self._remove_frame_time_record(frame_number) # remove from frame_first_packet_time
             del self.frames_in_progress[frame_number] # remove from frames_in_progress dict
             del self.frame_retransmit_req_record[frame_number] # remove from retransmit_req_record
             
-            heapq.heappush(self.ready_frames, (frame_number, frame_data)) # push onto the heap to be consumed by the display thread
-            # self.next_expected_frame += 1 # increment counter for next_frame. Actually, i think should be the responsibility of the 
+            # Frame is ready push it onto the heap to be consumed by the display thread
+            heapq.heappush(self.ready_frames, (frame_number, frame_data))
         
-    def _remove_frame_time_record(self, frame_num):
-        """
-        search array and remove element with element[0] == frame_number
-        found it useful to have this helper function since this routine is used
-        in a couple of places
-        """
-        for i in range(len(self.frame_first_packet_time)):
-            frame_time_record = self.frame_first_packet_time[i]
-            if frame_time_record[0] == frame_num:
-                self.frame_first_packet_time.pop(i)
-                break
     def _retransmit_request_loop(self):
+        """
+        Description: Checks if any frame has reached timeout. If so, it cleans its records and ask for
+                     a retransmit if it hasn't already reached the maximum number of retransmits already.
+                     If it did reach the maximum number of retransmits, the frame is dropped alltogether and
+                     the counter for the next_expected frame is incremented so as to signal to not wait for this
+                     specific frame anymore.
+        @param None
+        @return None
+        """
         def send_retransmit_request(frame_num):
+            """
+            Decsription: Helper functionality to send a retransmit request packet for a given frame
+            ============ Parameters =========
+            @param frame_num: The frame number to be requested.
+            ============ Returns =========
+            @return None. Sends a retransmit request packet over the socket to our peer
+            """
             pkt = VideoPacket(msg_type=MSG_TYPE_RETRANSMIT_REQ, frame_num=frame_num)
             socket.sendto(pkt.to_bytes(), self.peer_address)
         
@@ -316,14 +348,16 @@ class ChatClient:
             frame_time_record = self.frame_first_packet_time[i]
             frame_num = frame_time_record[0]
             time_elapsed = time.time() - frame_time_record[1]
+            
             # If timed out
             if time_elapsed >= self.frame_timeout:
+                # Clean up since we are gonna ask for a retransmit for this frame
                 self._remove_frame_time_record(frame_num) # Pop the time record so we prepare for the next first packet associated with the frame
-                self.frame_retransmit_req_record[frame_num] += 1 # remove from retransmit_req_record
                 del self.frames_in_progress[frame_num] # remove from frames_in_progress dict (since we are receiving the packets all over again)
-                
+                self.frame_retransmit_req_record[frame_num] += 1 # increment retransmit request record
+
                 # Only retransmit if we haven't reached the maximum number of retransmits allowed
-                if self.frame_retransmit_req_record[frame_num] < self.max_retransmits:
+                if self.frame_retransmit_req_record[frame_num] <= self.max_retransmits:
                      print(f"[*] Sending a retransmit request for frame number {frame_num}")
                      send_retransmit_request(frame_num)
                 else:
@@ -337,13 +371,15 @@ class ChatClient:
         time.sleep(0.1)
         
     def display_frames_thread(self):
+        """
+        Description: Display loop. It checks if there are any frames ready on the heap to be displayed.
+                     if the smallest frame number on the heap is not equal to the next_expected frame,
+                     then we have to wait until we have the next frame ready to be displayed.
+        @param None
+        @return None. Displays frame
+        """
         while self.running.is_set():
-            # print("self.ready_frames", self.ready_frames)
-            # print("self.ready_frames[0]", self.ready_frames[0])
-            # print("next_expected", self.next_expected_frame)
             if len(self.ready_frames) != 0 and self.ready_frames[0][0] == self.next_expected_frame:
-
-                # print("Got the correct frame in display_frames_thread!")
                 frame_num, frame_data = heapq.heappop(self.ready_frames)
                 self.gui_callback("peerimage",frame_data)
                 self.next_expected_frame += 1
@@ -355,7 +391,7 @@ class ChatClient:
         Description: Called by the GUI when the user accepts an incoming call.
         Currently does nothing as the HELLO_ACK is already sent when the HELLO is received.
         """
-        print("handle_packet: Received HELLO. Sending back HELLO_ACK")
+        print("[!] handle_packet: Received HELLO. Sending back HELLO_ACK")
         hello_ack_pkt = VideoPacket(MSG_TYPE_HELLO_ACK)
         self.socket.sendto(hello_ack_pkt.to_bytes(), self.peer_address)
 
@@ -385,14 +421,14 @@ class ChatClient:
         @return none
         """
         # Generate parameters
-        print("Initiator_Key_Exchange: HELLO_ACK received. Starting key exchange.")
+        print("[!] Initiator_Key_Exchange: HELLO_ACK received. Starting key exchange.")
         self.dh_params = DH.generate_dh_parameters()
         
         # Serialize and send parameters
         param_bytes = DH.serialize_parameters(self.dh_params)
         param_pkt = VideoPacket(MSG_TYPE_KEY_EXCHANGE_PARAMETERS, payload=param_bytes)
         self.socket.sendto(param_pkt.to_bytes(), self.peer_address)
-        print("Initiator_Key_Exchange: Sent DH parameters.")
+        print("[*] Initiator_Key_Exchange: Sent DH parameters.")
 
         # Generate public key and send
         pub, priv = DH.generate_dh_keys(self.dh_params)
@@ -400,7 +436,7 @@ class ChatClient:
         pub_bytes = DH.serialize_public_key(pub)
         pub_pkt = VideoPacket(MSG_TYPE_KEY_EXCHANGE_PUBLIC, payload=pub_bytes)
         self.socket.sendto(pub_pkt.to_bytes(), self.peer_address)
-        print("Initiator_Key_Exchange: Sent public key.")
+        print("[*] Initiator_Key_Exchange: Sent public key.")
 
     def _listener_handle_parameters(self, param_bytes):
         """
@@ -411,7 +447,7 @@ class ChatClient:
         @return none
         """
         # Deserialize parameters
-        print("Listener_Handle_Parameters: Received DH parameters.")
+        print("[!] Listener_Handle_Parameters: Received DH parameters.")
         self.dh_params = DH.deserialize_parameters_bytes(param_bytes)
         
         # Generate keys and send public key
@@ -420,7 +456,7 @@ class ChatClient:
         pub_bytes = DH.serialize_public_key(pub)
         pub_pkt = VideoPacket(MSG_TYPE_KEY_EXCHANGE_PUBLIC, payload=pub_bytes)
         self.socket.sendto(pub_pkt.to_bytes(), self.peer_address)
-        print("Listener_Handle_Parameters: Sent public key.")
+        print("[*] Listener_Handle_Parameters: Sent public key.")
 
     def _handle_public_key(self, their_pub_key_bytes):
         """
@@ -433,9 +469,9 @@ class ChatClient:
         if self.key_exchange_complete.is_set():
             return # Already done
 
-        print("Handle_public_key: Received peer public key.")
+        print("[!] Handle_public_key: Received peer public key.")
         if not self.dh_private_key:
-            print("Handle_public_key: Error: Got a public key before generating my own.")
+            print("[!] Handle_public_key: Error: Got a public key before generating my own.")
             return
 
         # Calculate shared secret and get derived key
@@ -451,7 +487,7 @@ class ChatClient:
 
 
         print(self.derived_key)
-        print("KEY EXCHANGE COMPLETE")
+        print("[+] KEY EXCHANGE COMPLETE")
         self.start_sender_thread()
 
 
@@ -467,4 +503,17 @@ class ChatClient:
         self.peer_address = (peer_ip, peer_port)
         pkt = VideoPacket(MSG_TYPE_HELLO, payload=b"Hello!")
         self.socket.sendto(pkt.to_bytes(), self.peer_address)
-        print(f"Initiator, send_hello: Sent HELLO to {self.peer_address}")
+        print(f"[*] Initiator, send_hello: Sent HELLO to {self.peer_address}")
+        
+        
+    def _remove_frame_time_record(self, frame_num):
+        """
+        search array and remove element with element[0] == frame_number
+        found it useful to have this helper function since this routine is used
+        in a couple of places
+        """
+        for i in range(len(self.frame_first_packet_time)):
+            frame_time_record = self.frame_first_packet_time[i]
+            if frame_time_record[0] == frame_num:
+                self.frame_first_packet_time.pop(i)
+                break
