@@ -180,7 +180,6 @@ class ChatClient:
             encrypted_types = [
                 MSG_TYPE_FRAME_DATA,
                 MSG_TYPE_HANGUP,
-                MSG_TYPE_RETRANSMIT_REQ
             ]
             
             if pkt.msg_type in encrypted_types:
@@ -250,6 +249,7 @@ class ChatClient:
             if 0 <= idx < len(self.sent_frames_history):
                 # Double checking because I'm paranoid
                 if self.sent_frames_history[idx][0] == frame_num:
+                    print("FOUND REQUESTED FRAME")
                     found_frame = True
                     packets_to_resend = self.sent_frames_history[idx][1]
         
