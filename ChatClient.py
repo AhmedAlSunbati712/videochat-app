@@ -215,7 +215,7 @@ class ChatClient:
         elif pkt.msg_type ==  MSG_TYPE_FRAME_DATA:
                 self._frame_data_packet_handler(pkt)            
         elif pkt.msg_type ==  MSG_TYPE_HANGUP:
-                self.hangup()
+                self.hang_up()
                 self.gui_callback("hangup")
         elif pkt.msg_type ==  MSG_TYPE_NACK:
                 self.gui_callback("nack")

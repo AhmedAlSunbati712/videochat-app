@@ -138,15 +138,17 @@ def make_app():
 
             root.after(0, lambda p=photo: update_self_video_surface(p))
         
-        elif msg == "hangup":
+        elif msg == "hangupreceived":
             root.after(0, end_active_call)
             messagebox.showinfo("Call", "Call hung up.")
             active_call_contact = None
-            chat_client.hang_up(True)
+            chat_client.hang_up(False)
             # Clear video surfaces
             update_video_surface(None)
             update_self_video_surface(None)
             show_frame(home_frame)
+
+            
 
         elif msg == "nack":
             messagebox.showinfo("Call", "Your call was declined.")
