@@ -15,24 +15,23 @@ class ChatClient:
         self.port = port
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.socket.bind((self.host, self.port))
-        print(f"Client bound to {self.host}:{self.port}")
+        print(f"[!] Client bound to {self.host}:{self.port}")
 
         self.peer_address = None
         self.running = threading.Event()
+        self.key_exchange_complete = threading.Event() # To signal when key exchange is done
         self.running.set()  
         
-        self.key_exchange_complete = threading.Event()
-        
-        # State of the key exchange process
+        # ======== State of the key exchange process ==========
         self.dh_params = None
         self.dh_private_key = None
         self.derived_key = None 
         
-        # To handle retransmit requests
+        # ========== State to handle retransmit requests ============
         self.sent_frames_history = deque(maxlen=20)
         self.frames_history_lock = threading.Lock()
         
-        # State variables for listener loop
+        # ========== State variables for listener loop ==============
         self.frames_in_progress = {} # frame_number -> List[(sequence_number, packet_data)]
         self.ready_frames = [] # min-heap elements: (frame_number, frame_data)
         self.frame_first_packet_time = [] # implmenting a fifo queue. Elements of form (frame_number, time of first packet arrival)
@@ -41,10 +40,7 @@ class ChatClient:
         self.frame_timeout = 0.2 # How long should we wait before asking for a retransmit?
         self.max_retransmits = 3 # How many times should we ask for a retransmit before dropping the frame all together?
         
-        # Two threads, one for receiving and the other for sending packets
-        # (the sender only works for sending video frame packets. All the sending
-        # that happens in key exchange are handled in the key exchange helper
-        # functions)
+        # ========== Thread Management ================
         self.receiver_thread = threading.Thread(target=self._receiver_loop, daemon=True)
         self.sender_thread = threading.Thread(target=self._sender_loop, daemon=True)
         self.check_retransmit_req_thread = threading.Thread(target=self._retransmit_request_loop, daemon=True)
@@ -58,26 +54,28 @@ class ChatClient:
         self.check_retransmit_req_thread.start()
         self.display_thread.start()
 
-        print("Sender thread started.")
+        print("[!] Sender thread started.")
 
     def start_receiver_thread(self):
         """
-        Description: Starts the receiver and sender threads.
+        Description: Starts the receiver thread.
         """
         self.receiver_thread.start()
-        print("Threads started.")
+        print("[!] Threads started.")
 
     
     def stop(self):
         """
         Description: Signals all threads to stop and closes the socket.
         """
-        print("Stopping client...")
+        print("[!] Stopping client...")
         self.running.clear()
         self.socket.close() 
         self.receiver_thread.join(timeout=1)
         self.sender_thread.join(timeout=1)
-        print("Client stopped.")
+        self.check_retransmit_req_thread.join(timeout=1)
+        self.display_thread.join(timeout=1)
+        print("[!] Client stopped.")
 
     def _receiver_loop(self):
         """
@@ -90,21 +88,24 @@ class ChatClient:
                 data, addr = self.socket.recvfrom(4096)
                 if not self.running.is_set():
                     break
+                
+                # If it's the first message from our peer, record their address so we can communicate with them
                 if not self.peer_address:
-                    print(f"Got first contact from {addr}")
+                    print(f"[!] Got first contact from: {addr}")
                     self.peer_address = addr
+                
+                # Call the packer handler   
                 self.handle_packet(data)
-
+            # Error handling
             except socket.error as e:
                 if self.running.is_set():
-                    print(f"Receiver loop socket Error: {e}")
+                    print(f"[!] Receiver loop socket Error: {e}")
             except Exception as e:
                 if self.running.is_set():
-                    print(f"Receiver loop error: {e}")
+                    print(f"[!] Receiver loop error: {e}")
 
     def _sender_loop(self):
         """
-        Unimplmented for now
         Description: Used for sending video frame packets
         """
         image_num = 0
@@ -112,19 +113,9 @@ class ChatClient:
         cap = cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
         cap.set(cv2.CAP_PROP_FPS, 60)
         while self.running.is_set():
-            
-            # cap = cv2.VideoCapture(0)
-
-            # Warmup
-            # for _ in range(5):
-            #     cap.read()
-
             ret, frame = cap.read()
-            # cap.release()
-
             if not ret:
-                raise RuntimeError("Failed to capture image")
-
+                raise RuntimeError("[!] Failed to capture image")
 
             h, w = frame.shape[:2]
             scale = min(400 / w, 400 / h, 1.0)
