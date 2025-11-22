@@ -301,8 +301,7 @@ class ChatClient:
         if frame_number not in self.frames_in_progress.keys():
             # Initialize entries for this frame
             self.frames_in_progress[frame_number] = []
-            with self.frame_time_record_lock:
-                self.frame_first_packet_time[frame_number] = time.time()
+            self.frame_first_packet_time[frame_number] = time.time()
             self.frame_retransmit_req_record[frame_number] = 0
         
         # Append this packet to the list of packets associated with this frame
@@ -314,8 +313,7 @@ class ChatClient:
             frame_data = assemble_frame(self.frames_in_progress[frame_number]) # Assemble the frame
             
             # Clean up
-            with self.frame_time_record_lock:
-                self._remove_frame_time_record(frame_number) # remove from frame_first_packet_time
+            self._remove_frame_time_record(frame_number) # remove from frame_first_packet_time
             del self.frames_in_progress[frame_number] # remove from frames_in_progress dict
             del self.frame_retransmit_req_record[frame_number] # remove from retransmit_req_record
             
@@ -345,30 +343,29 @@ class ChatClient:
             self.socket.sendto(pkt.to_bytes(), self.peer_address)
         while self.running.is_set():
             # Check if we reached timeout on any frame   
-            with self.frame_time_record_lock:
-                frames_to_check = list(self.frame_first_packet_time.keys())
-                for frame_num in frames_to_check:
-                    time_elapsed = time.time() - self.frame_first_packet_time[frame_num]  
-                    
-                    # If timed out
-                    if time_elapsed >= self.frame_timeout:
-                        # Clean up since we are gonna ask for a retransmit for this frame
-                        del self.frame_first_packet_time[frame_num] # Pop the time record so we prepare for the next first packet associated with the frame
-                        del self.frames_in_progress[frame_num] # remove from frames_in_progress dict (since we are receiving the packets all over again)
-                        self.frame_retransmit_req_record[frame_num] += 1 # increment retransmit request record
+            frames_to_check = list(self.frame_first_packet_time.keys())
+            for frame_num in frames_to_check:
+                time_elapsed = time.time() - self.frame_first_packet_time[frame_num]  
+                
+                # If timed out
+                if time_elapsed >= self.frame_timeout:
+                    # Clean up since we are gonna ask for a retransmit for this frame
+                    del self.frame_first_packet_time[frame_num] # Pop the time record so we prepare for the next first packet associated with the frame
+                    del self.frames_in_progress[frame_num] # remove from frames_in_progress dict (since we are receiving the packets all over again)
+                    self.frame_retransmit_req_record[frame_num] += 1 # increment retransmit request record
 
-                        # Only retransmit if we haven't reached the maximum number of retransmits allowed
-                        if self.frame_retransmit_req_record[frame_num] <= self.max_retransmits:
-                            print(f"[*] Sending a retransmit request for frame number {frame_num}")
-                            send_retransmit_request(frame_num)
-                        else:
-                            # If we reached the maximum number of requests, just drop the frame and move on to waiting on the next one
-                            print(f"[*] Timed out for frame {frame_num}.")
-                            self.next_expected_frame += 1
-                            del self.frames_in_progress[frame_num] # remove from frames_in_progress dict
-                            del self.frame_retransmit_req_record[frame_num]  # remove from retransmit_req_record
-                            del self.frame_first_packet_time[frame_num]
-                            self.next_expected_frame += 1
+                    # Only retransmit if we haven't reached the maximum number of retransmits allowed
+                    if self.frame_retransmit_req_record[frame_num] <= self.max_retransmits:
+                        print(f"[*] Sending a retransmit request for frame number {frame_num}")
+                        send_retransmit_request(frame_num)
+                    else:
+                        # If we reached the maximum number of requests, just drop the frame and move on to waiting on the next one
+                        print(f"[*] Timed out for frame {frame_num}.")
+                        self.next_expected_frame += 1
+                        del self.frames_in_progress[frame_num] # remove from frames_in_progress dict
+                        del self.frame_retransmit_req_record[frame_num]  # remove from retransmit_req_record
+                        del self.frame_first_packet_time[frame_num]
+                        self.next_expected_frame += 1
                 time.sleep(0.1)
                 
         
