@@ -3,9 +3,10 @@ from tkinter import messagebox
 from dataclasses import dataclass
 import ast
 import os
-
-
+import io
+from io import BytesIO
 from ChatClient import ChatClient
+from PIL import Image, ImageTk
 
 
 INCOMING_CALL_ASCII = [
@@ -94,6 +95,7 @@ def make_app():
     def set_chat_client(client: ChatClient):
         nonlocal chat_client
         chat_client = client
+        
 
     def logic_callback(msg: str, image_data: bytes = None):
         """
@@ -103,7 +105,6 @@ def make_app():
         # root.after(0, handle_message_on_main_thread, msg)
 
 
-        print(msg)
 
         if msg.startswith("incoming call,"):
             _, addr = msg.split(",", 1)
@@ -128,9 +129,14 @@ def make_app():
 
         elif msg.startswith("peerimage"):
             # Video frame received
-            _, image = msg.split(",", 1)
+            image_data_bytes = io.BytesIO(image_data)
             # Convert the image data back to PhotoImage
-            photo = tk.PhotoImage(data=image)
+            img = Image.open(image_data_bytes)
+            photo = ImageTk.PhotoImage(img)
+            print("attempting to display image")
+            
+            # photo = tk.PhotoImage(data=image_data_bytes.read())
+            
 
             root.after(0, lambda p=photo: update_video_surface(p))
 
@@ -457,7 +463,6 @@ def make_app():
             text=f"Connected to {contact.name} (IP: {contact.ip_address}; MAC: {contact.mac_address})"
         )
         call_status_label.config(text=status_text)
-        client.start_sender_thread()
         update_video_surface()  # Default to black placeholder until frames arrive
         show_frame(call_frame)
 

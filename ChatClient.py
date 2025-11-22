@@ -33,7 +33,7 @@ class ChatClient:
         self.ready_frames = [] # min-heap elements: (frame_number, frame_data)
         self.frame_first_packet_time = [] # implmenting a fifo queue. Elements of form (frame_number, time of first packet arrival)
         self.frame_retransmit_req_record = defaultdict(int) # frame_number -> number of retransmit requests requested
-        self.next_expected_frame = -1 # To figure out which frame we expect to receive next
+        self.next_expected_frame = 0 # To figure out which frame we expect to receive next
         self.frame_timeout = 0.2 # How long should we wait before asking for a retransmit?
         self.max_retransmits = 3 # How many times should we ask for a retransmit before dropping the frame all together?
         
@@ -44,13 +44,16 @@ class ChatClient:
         self.receiver_thread = threading.Thread(target=self._receiver_loop, daemon=True)
         self.sender_thread = threading.Thread(target=self._sender_loop, daemon=True)
         self.check_retransmit_req_thread = threading.Thread(target=self._retransmit_request_loop, daemon=True)
-        self.display_thread = threading.Thread(target=self.display_thread, daemon=True)
+        self.display_thread = threading.Thread(target=self.display_frames_thread, daemon=True)
 
     def start_sender_thread(self):
         """
         Description: Starts the sender thread for sending video frames.
         """
         self.sender_thread.start()
+        self.check_retransmit_req_thread.start()
+        self.display_thread.start()
+
         print("Sender thread started.")
 
     def start_receiver_thread(self):
@@ -58,8 +61,6 @@ class ChatClient:
         Description: Starts the receiver and sender threads.
         """
         self.receiver_thread.start()
-        self.check_retransmit_req_thread.start()
-        self.display_thread.start()
         print("Threads started.")
 
     
@@ -105,7 +106,7 @@ class ChatClient:
         image_num = 0
         while self.running.is_set():
 
-            cap = cv2.VideoCapture(1)
+            cap = cv2.VideoCapture(0)
 
             # Warmup
             for _ in range(5):
@@ -129,7 +130,7 @@ class ChatClient:
             success, buffer = cv2.imencode(".jpg", frame, encode_params)
             if not success:
                 raise RuntimeError("Failed to encode image")
-
+            
             img_bytes = buffer.tobytes()
             image_size = len(img_bytes)
             frame_count = math.ceil(image_size / 1400)
@@ -144,7 +145,7 @@ class ChatClient:
             image_num += 1
             print("Captured and sent a frame")
             self.gui_callback(f"selfimage,{img_bytes}")
-            time.sleep(2)
+            time.sleep(0.5)
 
 
 
@@ -173,10 +174,10 @@ class ChatClient:
             
             # List of message types that should be encrypted
             encrypted_types = [
-                VideoPacket.MSG_TYPE_FRAME_DATA,
-                VideoPacket.MSG_TYPE_HANGUP,
-                VideoPacket.MSG_TYPE_NACK,
-                VideoPacket.MSG_TYPE_RETRANSMIT_REQ
+                MSG_TYPE_FRAME_DATA,
+                MSG_TYPE_HANGUP,
+                MSG_TYPE_NACK,
+                MSG_TYPE_RETRANSMIT_REQ
             ]
             
             if pkt.msg_type in encrypted_types:
@@ -230,7 +231,7 @@ class ChatClient:
             return frame_data
         
         frame_number = pkt.frame_num
-        if (frame_number <= self.next_expected_frame):
+        if (frame_number < self.next_expected_frame):
             return
         seq_number = pkt.seq_num
         packet_video_data = pkt.payload
@@ -246,6 +247,7 @@ class ChatClient:
         
         # If we received all of the packets for this frame
         if len(self.frames_in_progress[frame_number])  == total_packets:
+            print(f"[!] Received a full image! Frame number is {frame_number}")
             frame_data = assemble_frame(frame_number, self.frames_in_progress[frame_number]) # Assemble the frame
             
             # remove from frame_first_packet_time (search array and remove element with element[0] == frame_number)
@@ -298,11 +300,18 @@ class ChatClient:
         time.sleep(0.1)
         
     def display_frames_thread(self):
-        if len(self.ready_frames) != 0 and self.ready_frames[0][0] == self.next_expected_frame:
-            frame_num, frame_data = heapq.heappop(self.ready_frames)
-            self.gui_callback(f"peerimage: {frame_data}")
+        while self.running.is_set():
+            print("self.ready_frames", self.ready_frames)
+            # print("self.ready_frames[0]", self.ready_frames[0])
+            print("next_expected", self.next_expected_frame)
+            if len(self.ready_frames) != 0 and self.ready_frames[0][0] == self.next_expected_frame:
+
+                print("Got the correct frame in display_frames_thread!")
+                frame_num, frame_data = heapq.heappop(self.ready_frames)
+                self.gui_callback("peerimage",frame_data)
+                self.next_expected_frame += 1
+            time.sleep(0.05)
             
-                
                 
         
     def accept_call(self):
@@ -391,6 +400,8 @@ class ChatClient:
 
         print(self.derived_key)
         print("KEY EXCHANGE COMPLETE")
+        self.start_sender_thread()
+
 
     def send_hello(self, peer_ip, peer_port):
         """
