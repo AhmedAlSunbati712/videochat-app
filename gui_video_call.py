@@ -458,7 +458,7 @@ def make_app():
         if active_call_contact:
             messagebox.showinfo("Call", "Call ended.")
         active_call_contact = None
-        chat_client.hangup()
+        chat_client.hang_up()
         # Clear video surfaces
         update_video_surface(None)
         update_self_video_surface(None)
