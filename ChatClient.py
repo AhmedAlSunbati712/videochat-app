@@ -110,7 +110,7 @@ class ChatClient:
         image_num = 0
         while self.running.is_set():
 
-            cap = cv2.VideoCapture(0)
+            cap = cv2.VideoCapture(1)
 
             # Warmup
             for _ in range(5):
@@ -161,7 +161,7 @@ class ChatClient:
             image_num += 1
             print("Captured and sent a frame")
             self.gui_callback(f"selfimage,{img_bytes}")
-            time.sleep(0.5)
+            time.sleep(0.1)
 
 
 
@@ -344,16 +344,15 @@ class ChatClient:
         
     def display_frames_thread(self):
         while self.running.is_set():
-            print("self.ready_frames", self.ready_frames)
+            # print("self.ready_frames", self.ready_frames)
             # print("self.ready_frames[0]", self.ready_frames[0])
-            print("next_expected", self.next_expected_frame)
+            # print("next_expected", self.next_expected_frame)
             if len(self.ready_frames) != 0 and self.ready_frames[0][0] == self.next_expected_frame:
 
-                print("Got the correct frame in display_frames_thread!")
+                # print("Got the correct frame in display_frames_thread!")
                 frame_num, frame_data = heapq.heappop(self.ready_frames)
                 self.gui_callback("peerimage",frame_data)
                 self.next_expected_frame += 1
-            time.sleep(0.05)
             
                 
         
