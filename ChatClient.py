@@ -136,6 +136,7 @@ class ChatClient:
             frame_count = math.ceil(image_size / 1400)
             print(f"Frame count: {frame_count}")
             for i in range(frame_count):
+                
                 frame_bytes_unencrypted = img_bytes[i*1400:(i+1)*1400]
                 frame_bytes_encrypted = DH.encrypt(self.derived_key,frame_bytes_unencrypted)
                 img_pkt = VideoPacket(MSG_TYPE_FRAME_DATA,image_num,i,frame_count,frame_bytes_encrypted)
