@@ -108,16 +108,19 @@ class ChatClient:
         Description: Used for sending video frame packets
         """
         image_num = 0
+
+        cap = cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
+        cap.set(cv2.CAP_PROP_FPS, 60)
         while self.running.is_set():
             
-            cap = cv2.VideoCapture(0)
+            # cap = cv2.VideoCapture(0)
 
             # Warmup
-            for _ in range(5):
-                cap.read()
+            # for _ in range(5):
+            #     cap.read()
 
             ret, frame = cap.read()
-            cap.release()
+            # cap.release()
 
             if not ret:
                 raise RuntimeError("Failed to capture image")
@@ -161,7 +164,7 @@ class ChatClient:
             image_num += 1
             print("Captured and sent a frame")
             self.gui_callback(f"selfimage,{img_bytes}")
-            time.sleep(0.01)
+            # time.sleep(0.01)
 
 
 
