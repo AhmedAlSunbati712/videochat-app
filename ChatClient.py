@@ -6,7 +6,7 @@ from VideoPacket import *
 import cv2
 import math
 import heapq
-from collections import defaultdict
+from collections import deque, defaultdict
 
 class ChatClient:
     def __init__(self, host, port, gui_callback=None):
@@ -27,6 +27,10 @@ class ChatClient:
         self.dh_params = None
         self.dh_private_key = None
         self.derived_key = None 
+        
+        # To handle retransmit requests
+        self.sent_frames_history = deque(maxlen=20)
+        self.frames_history_lock = threading.Lock()
         
         # State variables for listener loop
         self.frames_in_progress = {} # frame_number -> List[(sequence_number, packet_data)]
@@ -134,13 +138,24 @@ class ChatClient:
             img_bytes = buffer.tobytes()
             image_size = len(img_bytes)
             frame_count = math.ceil(image_size / 1400)
+            packets_for_this_frame = [] # Need to store to hold in history
+            
             print(f"Frame count: {frame_count}")
+            # Send a frame in chunks
             for i in range(frame_count):
+                # Chunk and encrypt each chunk
+                chunk_bytes_unencrypted = img_bytes[i*1400:(i+1)*1400]
+                chunk_bytes_encrypted = DH.encrypt(self.derived_key,chunk_bytes_unencrypted)
                 
-                frame_bytes_unencrypted = img_bytes[i*1400:(i+1)*1400]
-                frame_bytes_encrypted = DH.encrypt(self.derived_key,frame_bytes_unencrypted)
-                img_pkt = VideoPacket(MSG_TYPE_FRAME_DATA,image_num,i,frame_count,frame_bytes_encrypted)
-                self.socket.sendto(img_pkt.to_bytes(), self.peer_address)
+                # Create the packet
+                chunk_pkt = VideoPacket(MSG_TYPE_FRAME_DATA,image_num,i,frame_count,chunk_bytes_encrypted)
+                packets_for_this_frame.append(chunk_pkt)
+                
+                self.socket.sendto(chunk_pkt.to_bytes(), self.peer_address) # Send immediately
+            
+            # Use a mutex lock to store the packets for this frame
+            with self.frames_history_lock:
+                self.sent_frames_history.append((image_num, packets_for_this_frame))
 
 
             image_num += 1
@@ -217,9 +232,36 @@ class ChatClient:
                 # unimplemented yet
                 return
         elif pkt.msg_type ==  MSG_TYPE_RETRANSMIT_REQ:
-                # unimplemented yet
+                self.handle_retransmit(pkt)
                 return
             
+    def handle_retransmit(self, pkt: VideoPacket):
+        found_frame = False
+        packets_to_resend = []
+        frame_num = pkt.frame_num
+        
+        # Search through history, making sure to acquire the lock first:
+        with self.frames_history_lock:
+            if not self.sent_frames_history:
+                print(f"[!] Request for {frame_num} denied: History is empty.")
+                return
+            
+            # Since the frame numbers in the history are contigious, we can use this trick for O(1) lookup
+            left_endpoint_frame_num = self.sent_frames_history[0][0] 
+            idx = frame_num - left_endpoint_frame_num
+            if 0 <= idx < len(self.sent_frames_history):
+                # Double checking because I'm paranoid
+                if self.sent_frames_history[idx][0] == frame_num:
+                    found_frame = True
+                    packets_to_resend = self.sent_frames_history[idx][1]
+        
+        if found_frame:
+            print(f"[+] Resending frame {frame_num} ({len(packets_to_resend)} packets)")
+            for frame_pkt in packets_to_resend:
+                self.socket.sendto(frame_pkt.to_bytes(), self.peer_address)
+        else:
+            print(f"[!] Couldn't find frame {frame_num} in history! It's too old!")
+        
     def _frame_data_packet_handler(self, pkt: VideoPacket):
         def assemble_frame(frame_num, seq_data_pairs):
             """
