@@ -110,7 +110,7 @@ class ChatClient:
         """
         frame_num = 0
 
-        cap = cv2.VideoCapture(1, cv2.CAP_AVFOUNDATION)
+        cap = cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
         cap.set(cv2.CAP_PROP_FPS, 60)
         while self.running.is_set():
             ret, frame = cap.read()
@@ -343,7 +343,8 @@ class ChatClient:
             self.socket.sendto(pkt.to_bytes(), self.peer_address)
         while self.running.is_set():
             # Check if we reached timeout on any frame   
-            for frame_num in self.frame_first_packet_time.keys():
+            frames_to_check = list(self.frame_first_packet_time.keys())
+            for frame_num in frames_to_check:
                 time_elapsed = time.time() - self.frame_first_packet_time[frame_num]  
                 
                 # If timed out
@@ -351,7 +352,7 @@ class ChatClient:
                     # Clean up since we are gonna ask for a retransmit for this frame
                     del self.frame_first_packet_time[frame_num] # Pop the time record so we prepare for the next first packet associated with the frame
                     del self.frames_in_progress[frame_num] # remove from frames_in_progress dict (since we are receiving the packets all over again)
-                    self.frame_retransmit_req_record += 1 # increment retransmit request record
+                    self.frame_retransmit_req_record[frame_num] += 1 # increment retransmit request record
 
                     # Only retransmit if we haven't reached the maximum number of retransmits allowed
                     if self.frame_retransmit_req_record[frame_num] <= self.max_retransmits:
