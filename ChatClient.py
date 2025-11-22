@@ -359,6 +359,22 @@ class ChatClient:
         hello_ack_pkt = VideoPacket(MSG_TYPE_HELLO_ACK)
         self.socket.sendto(hello_ack_pkt.to_bytes(), self.peer_address)
 
+    def decline_call(self):
+        """
+        Description: Called by the GUI when the user declines an incoming call.
+        Currently does nothing.
+        """
+        nack_pkt = VideoPacket(MSG_TYPE_NACK)
+        self.socket.sendto(nack_pkt.to_bytes(), self.peer_address)
+
+    def hang_up(self):
+        """
+        Description: Called by the GUI when the user hangs up the call.
+        Currently does nothing.
+        """
+        hangup_pkt = VideoPacket(MSG_TYPE_HANGUP)
+        self.socket.sendto(hangup_pkt.to_bytes(), self.peer_address)
+
 
     def _initiator_start_key_exchange(self):
         """

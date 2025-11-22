@@ -28,7 +28,6 @@ VIDEO_SURFACE_HEIGHT = 360
 class Contact:
     name: str
     ip_address: str
-    mac_address: str
 
 
 def load_contacts():
@@ -38,17 +37,10 @@ def load_contacts():
     with open(CONTACTS_FILE, "r") as f:
         for line in f:
             parts = [p.strip() for p in line.split(",")]
-            if len(parts) == 3:
-                name, ip, mac = parts
-                contacts.append(Contact(name, ip, mac))
+            if len(parts) == 2:
+                name, ip = parts
+                contacts.append(Contact(name, ip))
     return contacts
-
-def search_contact_by_mac(mac_address: str):
-    contacts = load_contacts()
-    for contact in contacts:
-        if contact.mac_address == mac_address:
-            return contact
-    return None
 
 
 def search_contact_by_ip(ip_address: str):
@@ -61,7 +53,7 @@ def search_contact_by_ip(ip_address: str):
 
 def append_contact(contact: Contact):
     with open(CONTACTS_FILE, "a") as f:
-        f.write(f"{contact.name},{contact.ip_address},{contact.mac_address}\n")
+        f.write(f"{contact.name},{contact.ip_address}\n")
 
 
 def make_app():
@@ -115,7 +107,7 @@ def make_app():
                     ip, port = peer_addr
                     contact = search_contact_by_ip(ip)
                     if contact is None:
-                        contact = Contact(name=f"Unknown ({ip})", ip_address=ip, mac_address="Unknown")
+                        contact = Contact(name=f"Unknown ({ip})", ip_address=ip)
             except (SyntaxError, ValueError):
                 pass
 
@@ -192,7 +184,7 @@ def make_app():
         listbox = tk.Listbox(chooser, width=80)
         listbox.pack(padx=10, pady=8, fill="both", expand=True)
         for c in contacts:
-            listbox.insert(tk.END, f"{c.name} (IP: {c.ip_address}, MAC: {c.mac_address})")
+            listbox.insert(tk.END, f"{c.name} (IP: {c.ip_address})")
 
         def do_call():
             sel = listbox.curselection()
@@ -249,7 +241,7 @@ def make_app():
             for idx, c in enumerate(contacts, start=1):
                 contacts_listbox.insert(
                     tk.END,
-                    f"{idx}. {c.name} (IP: {c.ip_address}, MAC: {c.mac_address})"
+                    f"{idx}. {c.name} (IP: {c.ip_address})"
                 )
 
     btn_add_contact = tk.Button(contacts_frame, text="Add Contact",
@@ -273,26 +265,20 @@ def make_app():
                                                    sticky="e", pady=5, padx=10)
     tk.Label(add_contact_frame, text="IP Address:").grid(row=3, column=0,
                                                          sticky="e", pady=5, padx=10)
-    tk.Label(add_contact_frame, text="MAC Address:").grid(row=4, column=0,
-                                                          sticky="e", pady=5, padx=10)
 
     name_entry = tk.Entry(add_contact_frame, width=40)
     ip_entry = tk.Entry(add_contact_frame, width=40)
-    mac_entry = tk.Entry(add_contact_frame, width=40)
 
     name_entry.grid(row=2, column=1, sticky="w", pady=5)
     ip_entry.grid(row=3, column=1, sticky="w", pady=5)
-    mac_entry.grid(row=4, column=1, sticky="w", pady=5)
 
     def clear_add_contact_form():
         name_entry.delete(0, tk.END)
         ip_entry.delete(0, tk.END)
-        mac_entry.delete(0, tk.END)
 
     def submit_contact():
         name = name_entry.get().strip()
         ip = ip_entry.get().strip()
-        mac = mac_entry.get().strip()
 
         if not name or name.lower() == "b":
             # cancel and go back to contacts
@@ -301,13 +287,13 @@ def make_app():
             show_frame(contacts_frame)
             return
 
-        if ip.lower() == "b" or mac.lower() == "b":
+        if ip.lower() == "b":
             clear_add_contact_form()
             update_contacts_list()
             show_frame(contacts_frame)
             return
 
-        contact = Contact(name, ip, mac)
+        contact = Contact(name, ip)
         try:
             append_contact(contact)
             messagebox.showinfo("Saved", "Contact saved successfully.")
@@ -353,6 +339,7 @@ def make_app():
 
     def on_decline():
         messagebox.showinfo("Call", "Call declined.")
+        chat_client.decline_call()
         show_frame(home_frame)
 
     btn_accept = tk.Button(incoming_frame, text="Accept (A)", command=on_accept)
@@ -371,7 +358,7 @@ def make_app():
         incoming_call_contact = contact
         incoming_info_label.config(
             text=f"Incoming call from {contact.name} "
-                 f"(IP {contact.ip_address}; MAC {contact.mac_address})"
+                 f"(IP {contact.ip_address})"
         )
         show_frame(incoming_frame)
 
@@ -402,9 +389,9 @@ def make_app():
         nonlocal current_outgoing_contact
         current_outgoing_contact = contact
         initiate_contact_label.config(
-            text=f"Calling {contact.name} (IP: {contact.ip_address}; MAC: {contact.mac_address})"
+            text=f"Calling {contact.name} (IP: {contact.ip_address})"
         )
-        initiate_status_label.config(text=f"{contact.name} has been rung", fg="yellow")
+        initiate_status_label.config(text=f"{contact.name} has been rung", fg="green")
 
 
         client.send_hello(contact.ip_address, 3456)
@@ -460,7 +447,7 @@ def make_app():
         nonlocal active_call_contact
         active_call_contact = contact
         call_contact_label.config(
-            text=f"Connected to {contact.name} (IP: {contact.ip_address}; MAC: {contact.mac_address})"
+            text=f"Connected to {contact.name} (IP: {contact.ip_address})"
         )
         call_status_label.config(text=status_text)
         update_video_surface()  # Default to black placeholder until frames arrive
@@ -471,10 +458,27 @@ def make_app():
         if active_call_contact:
             messagebox.showinfo("Call", "Call ended.")
         active_call_contact = None
+        chat_client.hangup()
+        # Clear video surfaces
+        update_video_surface(None)
+        update_self_video_surface(None)
         show_frame(home_frame)
 
-    btn_end_active = tk.Button(call_frame, text="End Call", command=end_active_call)
-    btn_end_active.pack(pady=5, padx=10, anchor="w")
+    # Create a frame for the hang up button to center it
+    hangup_frame = tk.Frame(call_frame)
+    hangup_frame.pack(pady=15, padx=10)
+
+    btn_hangup = tk.Button(
+        hangup_frame,
+        text="Hang Up",
+        command=end_active_call,
+        bg="red",
+        fg="white",
+        font=("Arial", 12, "bold"),
+        padx=20,
+        pady=10
+    )
+    btn_hangup.pack()
 
     # Expose helpers so the networking layer can update the call UI when video frames arrive.
     # root.render_video_frame = update_video_surface
