@@ -90,10 +90,7 @@ def make_app():
         
 
     def logic_callback(msg: str, image_data: bytes = None):
-        """
-        This is called from the network thread.
-        It MUST NOT touch Tk directly.
-        """
+
         # root.after(0, handle_message_on_main_thread, msg)
 
 
@@ -141,7 +138,19 @@ def make_app():
 
             root.after(0, lambda p=photo: update_self_video_surface(p))
         
+        elif msg == "hangup":
+            root.after(0, end_active_call)
+            messagebox.showinfo("Call", "Call hung up.")
+            active_call_contact = None
+            chat_client.hang_up(True)
+            # Clear video surfaces
+            update_video_surface(None)
+            update_self_video_surface(None)
+            show_frame(home_frame)
 
+        elif msg == "nack":
+            messagebox.showinfo("Call", "Your call was declined.")
+            root.after(0, lambda: show_frame(home_frame))
 
 
 
@@ -338,7 +347,7 @@ def make_app():
         show_active_call(incoming_call_contact, "Incoming call connected.")
 
     def on_decline():
-        messagebox.showinfo("Call", "Call declined.")
+        # messagebox.showinfo("Call", "Call successfully declined.")
         chat_client.decline_call()
         show_frame(home_frame)
 
@@ -456,9 +465,9 @@ def make_app():
     def end_active_call():
         nonlocal active_call_contact
         if active_call_contact:
-            messagebox.showinfo("Call", "Call ended.")
+            messagebox.showinfo("Call", "Call hung up.")
         active_call_contact = None
-        chat_client.hang_up()
+        chat_client.hang_up(True)
         # Clear video surfaces
         update_video_surface(None)
         update_self_video_surface(None)
