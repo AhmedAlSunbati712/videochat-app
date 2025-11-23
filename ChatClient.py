@@ -436,7 +436,12 @@ class ChatClient:
             hangup_pkt = VideoPacket(MSG_TYPE_HANGUP)
             self.socket.sendto(hangup_pkt.to_bytes(), self.peer_address)
 
-        self.stop()
+        self.running.clear()
+        # self.receiver_thread.join(timeout=1)
+        self.sender_thread.join(timeout=1)
+        self.check_retransmit_req_thread.join(timeout=1)
+        self.display_thread.join(timeout=1)
+
 
 
 
