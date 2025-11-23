@@ -257,8 +257,10 @@ class ChatClient:
         elif pkt.msg_type ==  MSG_TYPE_FRAME_DATA:
                 self._frame_data_packet_handler(pkt)            
         elif pkt.msg_type ==  MSG_TYPE_HANGUP:
-                decoded = DH.decrypt(self.derived_key, pkt.payload)
-                if (decoded == hangupmessage):
+                print("[!] handle_packet: Received HANGUP.")
+                print("payload",pkt.payload)
+                if (pkt.payload == hangupmessage):
+                    print("valid")
                     self.gui_callback("hangupreceived")
         elif pkt.msg_type ==  MSG_TYPE_NACK:
                 self.gui_callback("nack")
@@ -398,10 +400,8 @@ class ChatClient:
                     
                     # If timed out
                     if time_elapsed >= self.frame_timeout:
-                        print(f"timed out for frame {frame_num}")
                         # Clean up since we are gonna ask for a retransmit for this frame
                         self.frame_first_packet_time[frame_num] = time.time() # Pop the time record so we prepare for the next first packet associated with the frame
-                        print(f"Checking the frame number {frame_num}")
                         if frame_num in self.frames_in_progress.keys(): del self.frames_in_progress[frame_num] # remove from frames_in_progress dict (since we are receiving the packets all over again)
                         self.frame_retransmit_req_record[frame_num] += 1 # increment retransmit request record
 
@@ -466,6 +466,7 @@ class ChatClient:
 
     def send_hang_up(self):
             hangupmessage_encrypted = DH.encrypt(self.derived_key, hangupmessage)
+            print(hangupmessage_encrypted)
             hangup_pkt = VideoPacket(MSG_TYPE_HANGUP,payload=hangupmessage_encrypted)
             self.socket.sendto(hangup_pkt.to_bytes(), self.peer_address)
 
@@ -544,8 +545,6 @@ class ChatClient:
         
         self.key_exchange_complete.set()
 
-
-        print(self.derived_key)
         print("[+] KEY EXCHANGE COMPLETE")
         self.start_sender_thread()
 
