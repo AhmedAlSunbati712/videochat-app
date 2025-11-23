@@ -4,7 +4,7 @@ Description: Tkinter-based GUI for encrypted peer-to-peer video calling applicat
              Provides screens for managing contacts, initiating/receiving calls, and
              displaying video streams.
 
-Citations: ChatGPT for writing the description (above) and comments/documentation in a nice format
+Citations: ChatGPT for writing the description (above) and comments/documentation in a nice format, and for GUI skeleton code.
 """
 
 import tkinter as tk

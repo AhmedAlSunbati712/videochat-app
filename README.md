@@ -3,6 +3,8 @@
 - James C. Underwood
 - Ahmed M. Al Sunbati
 
+## To run
+Run python gui_video_call.py
 
 ## Key exchange flow
 ### Initiator POV
