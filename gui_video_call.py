@@ -484,7 +484,7 @@ def make_app():
         text="Hang Up",
         command=end_active_call,
         bg="red",
-        fg="white",
+        fg="black",
         font=("Arial", 12, "bold"),
         padx=20,
         pady=10

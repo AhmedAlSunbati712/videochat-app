@@ -112,7 +112,7 @@ class ChatClient:
         """
         frame_num = 0
 
-        cap = cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
+        cap = cv2.VideoCapture(1, cv2.CAP_AVFOUNDATION)
         cap.set(cv2.CAP_PROP_FPS, 60)
         while self.running.is_set():
             ret, frame = cap.read()
@@ -431,11 +431,13 @@ class ChatClient:
         Description: Stops sending and receiving. Called by the GUI when the user hangs up the call, OR called internally when we receive a HANGUP packet from the peer.
         @param sendpack (bool): Whether to send a HANGUP packet to the peer
         """
-        self.stop()
         
         if sendpack:
             hangup_pkt = VideoPacket(MSG_TYPE_HANGUP)
             self.socket.sendto(hangup_pkt.to_bytes(), self.peer_address)
+
+        self.stop()
+
 
 
     def _initiator_start_key_exchange(self):
