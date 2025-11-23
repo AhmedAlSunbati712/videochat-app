@@ -16,6 +16,7 @@ class ChatClient:
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.socket.bind((self.host, self.port))
         print(f"[!] Client bound to {self.host}:{self.port}")
+        self.frame_num = 0
 
         self.peer_address = None
         
@@ -50,18 +51,23 @@ class ChatClient:
 
     def reset_ds(self):
         # ======== State of the key exchange process ==========
-        self.dh_params = None
-        self.dh_private_key = None
-        self.derived_key = None 
+        # self.dh_params = None
+        # self.dh_private_key = None
+        # self.derived_key = None 
+        self.frame_num = 0
         # ========== State to handle retransmit requests ============
+        
         self.sent_frames_history = deque(maxlen=40)
         self.frames_history_lock = threading.Lock()
         
         self.frames_in_progress = {} # frame_number -> List[(sequence_number, packet_data)]
         self.ready_frames = [] # min-heap elements: (frame_number, frame_data)
+        print("after reset: ", self.ready_frames)
         self.frame_first_packet_time = {} # implmenting a fifo queue. Elements of form (frame_number, time of first packet arrival)
         self.frame_retransmit_req_record = defaultdict(int) # frame_number -> number of retransmit requests requested
         self.next_expected_frame = 0 # To figure out which frame we expect to receive next
+        print("after reset: ", self.next_expected_frame)
+
         self.last_frame_update = None
 
     
@@ -130,7 +136,7 @@ class ChatClient:
 
 
 
-        frame_num = 0
+        self.frame_num = 0
 
         cap = cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
         cap.set(cv2.CAP_PROP_FPS, 60)
@@ -234,6 +240,8 @@ class ChatClient:
         elif pkt.msg_type ==  MSG_TYPE_KEY_EXCHANGE_PUBLIC:
                 # Both the listener and the initiator have to call this
                 self._handle_public_key(pkt.payload)
+                self.reset_ds()
+
                 
         elif pkt.msg_type ==  MSG_TYPE_FRAME_DATA:
                 self._frame_data_packet_handler(pkt)            
