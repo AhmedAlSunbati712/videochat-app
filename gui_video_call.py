@@ -132,10 +132,9 @@ def make_app():
 
         
         elif msg == "hangupreceived":
-            # messagebox.showinfo("Call", "Call hung up.")
-            print("CALL HUNG UP")
-            sys.exit()
-            # root.after(0, end_active_call)
+            messagebox.showinfo("Call", "Call hung up.")
+            print("about to sys.exit()")
+            root.after(0, lambda: sys.exit())             # root.after(0, end_active_call)
             # active_call_contact = None
             # chat_client.reset_ds()
             # # Clear video surfaces
