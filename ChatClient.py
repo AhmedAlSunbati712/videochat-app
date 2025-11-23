@@ -18,6 +18,7 @@ import math
 import heapq
 from collections import deque, defaultdict
 
+hangupmessage = 0x01AB
 class ChatClient:
     """
     UDP-based video chat client with end-to-end encryption.
@@ -256,7 +257,7 @@ class ChatClient:
                 self._frame_data_packet_handler(pkt)            
         elif pkt.msg_type ==  MSG_TYPE_HANGUP:
                 decoded = DH.decrypt(self.derived_key, pkt.payload)
-                if (decoded == "Hangup"):
+                if (decoded == hangupmessage):
                     self.gui_callback("hangupreceived")
         elif pkt.msg_type ==  MSG_TYPE_NACK:
                 self.gui_callback("nack")
@@ -463,7 +464,7 @@ class ChatClient:
 
 
     def send_hang_up(self):
-            hangup_pkt = VideoPacket(MSG_TYPE_HANGUP,payload="Hangup")
+            hangup_pkt = VideoPacket(MSG_TYPE_HANGUP,payload=hangupmessage)
             self.socket.sendto(hangup_pkt.to_bytes(), self.peer_address)
 
 
