@@ -1,3 +1,10 @@
+"""
+DH.py     Ahmed Al Sunbati     Nov 13th, 2025
+Description: Helper functions for performing Diffie-Hellman key exchange
+
+Citations: 
+"""
+
 import os
 from cryptography.hazmat.primitives.asymmetric import dh
 from cryptography.hazmat.primitives import hashes

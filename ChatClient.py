@@ -1,16 +1,43 @@
+"""
+ChatClient.py     Ahmed Al Sunbati, James Underwood     Nov 13th, 2025
+Description: UDP-based client for encrypted peer-to-peer video chat with reliable transmission.
+             Implements Diffie-Hellman key exchange, packet-based video streaming, and
+             automatic retransmission for lost frames.
+
+Citations: ChatGPT for writing the description (above) and comments/documentation in a nice format 
+"""
+
+
 import socket
 import threading
 import time
-import DH  
-from VideoPacket import * 
+import DH
+from VideoPacket import *
 import cv2
 import math
 import heapq
 from collections import deque, defaultdict
 
 class ChatClient:
+    """
+    UDP-based video chat client with end-to-end encryption.
+
+    Manages peer-to-peer video communication using a custom protocol with:
+    - Diffie-Hellman key exchange for secure communication
+    - Fragmented video frame transmission over UDP
+    - Automatic retransmission of lost packets
+    - Frame reordering and buffering for smooth playback
+    """
     def __init__(self, host, port, gui_callback=None):
-        self.gui_callback = gui_callback # self.gui
+        """
+        Initialize the chat client.
+
+        Args:
+            host: Local IP address to bind to
+            port: Local port to bind to
+            gui_callback: Optional callback function for GUI updates
+        """
+        self.gui_callback = gui_callback
         self.host = host
         self.port = port
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -19,56 +46,37 @@ class ChatClient:
         self.frame_num = 0
 
         self.peer_address = None
-        
+
         self.running = threading.Event()
-        self.key_exchange_complete = threading.Event() # To signal when key exchange is done
-        self.running.set()  
-        
-        # ======== State of the key exchange process ==========
+        self.key_exchange_complete = threading.Event()
+        self.running.set()
+
+        # ======== Diffie-Hellman key exchange state ==========
         self.dh_params = None
         self.dh_private_key = None
-        self.derived_key = None 
-        
-        # ========== State to handle retransmit requests ============
+        self.derived_key = None
+
+        # ======== Sent frame history for retransmissions ========
+        # Stores last 40 frames we sent so we can resend them if requested
         self.sent_frames_history = deque(maxlen=40)
         self.frames_history_lock = threading.Lock()
-        
-        # ========== State variables for listener loop ==============
-        self.frames_in_progress = {} # frame_number -> List[(sequence_number, packet_data)]
-        self.ready_frames = [] # min-heap elements: (frame_number, frame_data)
-        self.frame_first_packet_time = {} # implmenting a fifo queue. Elements of form (frame_number, time of first packet arrival)
-        self.frame_retransmit_req_record = defaultdict(int) # frame_number -> number of retransmit requests requested
-        self.next_expected_frame = 0 # To figure out which frame we expect to receive next
-        self.frame_timeout = 0.2 # How long should we wait before asking for a retransmit?
-        self.max_retransmits = 3 # How many times should we ask for a retransmit before dropping the frame all together?
+
+        # ======== Received frame reassembly state ===============
+        self.frames_in_progress = {}  # frame_number -> List[(seq_num, packet_data)]
+        self.ready_frames = []  # min-heap: (frame_number, complete_frame_data)
+        self.frame_first_packet_time = {}  # frame_number -> timestamp of first packet
+        self.frame_retransmit_req_record = defaultdict(int)  # frame_number -> retransmit count
+        self.next_expected_frame = 0  # Next frame number to display
+        self.frame_timeout = 0.2  # Seconds to wait before requesting retransmission
+        self.max_retransmits = 3  # Max retransmission attempts before dropping frame
         self.frame_time_record_lock = threading.Lock()
         self.last_frame_update = None
-        # ========== Thread Management ================
+
+        # ======== Thread Management ======================
         self.receiver_thread = threading.Thread(target=self._receiver_loop, daemon=True)
         self.sender_thread = threading.Thread(target=self._sender_loop, daemon=True)
         self.check_retransmit_req_thread = threading.Thread(target=self._retransmit_request_loop, daemon=True)
         self.display_thread = threading.Thread(target=self.display_frames_thread, daemon=True)
-
-    def reset_ds(self):
-        # ======== State of the key exchange process ==========
-        # self.dh_params = None
-        # self.dh_private_key = None
-        # self.derived_key = None 
-        self.frame_num = 0
-        # ========== State to handle retransmit requests ============
-        
-        self.sent_frames_history = deque(maxlen=40)
-        self.frames_history_lock = threading.Lock()
-        
-        self.frames_in_progress = {} # frame_number -> List[(sequence_number, packet_data)]
-        self.ready_frames = [] # min-heap elements: (frame_number, frame_data)
-        print("after reset: ", self.ready_frames)
-        self.frame_first_packet_time = {} # implmenting a fifo queue. Elements of form (frame_number, time of first packet arrival)
-        self.frame_retransmit_req_record = defaultdict(int) # frame_number -> number of retransmit requests requested
-        self.next_expected_frame = 0 # To figure out which frame we expect to receive next
-        print("after reset: ", self.next_expected_frame)
-
-        self.last_frame_update = None
 
     
     def start_sender_thread(self):
@@ -131,24 +139,25 @@ class ChatClient:
 
     def _sender_loop(self):
         """
-        Description: Used for sending video frame packets
+        Continuously captures video frames, compresses them, fragments into packets,
+        encrypts, and sends to peer. Stores sent packets for potential retransmission.
         """
-
-
-
         self.frame_num = 0
 
+        # Open camera (device 1) with macOS-specific backend
         cap = cv2.VideoCapture(1, cv2.CAP_AVFOUNDATION)
         cap.set(cv2.CAP_PROP_FPS, 60)
-        while self.running.is_set():
 
-            if (not self.key_exchange_complete.is_set()):
+        while self.running.is_set():
+            # Wait for key exchange to complete before sending video
+            if not self.key_exchange_complete.is_set():
                 continue
 
             ret, frame = cap.read()
             if not ret:
                 raise RuntimeError("[!] Failed to capture frame")
 
+            # Resize frame to max 400x400 to reduce bandwidth
             h, w = frame.shape[:2]
             scale = min(400 / w, 400 / h, 1.0)
             if scale < 1.0:
@@ -156,37 +165,38 @@ class ChatClient:
                 new_h = int(h * scale)
                 frame = cv2.resize(frame, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
+            # Compress frame as JPEG with quality 70
             encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), int(70)]
             success, buffer = cv2.imencode(".jpg", frame, encode_params)
             if not success:
                 raise RuntimeError("[!] Failed to encode frame")
-            
+
             frame_bytes = buffer.tobytes()
             frame_size = len(frame_bytes)
+            # Fragment frame into 1400-byte chunks (safe for UDP MTU)
             frame_pkts_count = math.ceil(frame_size / 1400)
-            packets_for_this_frame = [] # Need to store to hold in history
+            packets_for_this_frame = []
             print(f"[*] Captured frame: {self.frame_num}")
             print(f"[*] Frame count: {frame_pkts_count}")
-            
-            # Send a frame in chunks
+
+            # Send frame in encrypted chunks
             for i in range(frame_pkts_count):
-                # Chunk and encrypt each chunk
                 chunk_bytes_unencrypted = frame_bytes[i*1400:(i+1)*1400]
-                chunk_bytes_encrypted = DH.encrypt(self.derived_key,chunk_bytes_unencrypted)
-                
-                # Create the packet
-                chunk_pkt = VideoPacket(msg_type=MSG_TYPE_FRAME_DATA, frame_num=self.frame_num, seq_num=i, total_packets=frame_pkts_count, payload=chunk_bytes_encrypted)
+                chunk_bytes_encrypted = DH.encrypt(self.derived_key, chunk_bytes_unencrypted)
+
+                chunk_pkt = VideoPacket(msg_type=MSG_TYPE_FRAME_DATA, frame_num=self.frame_num,
+                                       seq_num=i, total_packets=frame_pkts_count,
+                                       payload=chunk_bytes_encrypted)
                 packets_for_this_frame.append(chunk_pkt)
-                
-                self.socket.sendto(chunk_pkt.to_bytes(), self.peer_address) # Send immediately
-            
-            # Use a mutex lock to store the packets for this frame
+
+                self.socket.sendto(chunk_pkt.to_bytes(), self.peer_address)
+
+            # Store packets in history for potential retransmission
             with self.frames_history_lock:
                 self.sent_frames_history.append((self.frame_num, packets_for_this_frame))
 
             self.frame_num += 1
             print(f"[*] Captured and sent frame {self.frame_num}")
-            self.gui_callback(f"selfimage,{frame_bytes}")
 
 
 
@@ -240,7 +250,6 @@ class ChatClient:
         elif pkt.msg_type ==  MSG_TYPE_KEY_EXCHANGE_PUBLIC:
                 # Both the listener and the initiator have to call this
                 self._handle_public_key(pkt.payload)
-                self.reset_ds()
 
                 
         elif pkt.msg_type ==  MSG_TYPE_FRAME_DATA:
@@ -250,7 +259,6 @@ class ChatClient:
         elif pkt.msg_type ==  MSG_TYPE_NACK:
                 self.gui_callback("nack")
         elif pkt.msg_type ==  MSG_TYPE_RETRANSMIT_REQ:
-                print("RECEIVED RETRANSMIT REQ")
                 self.handle_retransmit(pkt)
             
     def handle_retransmit(self, pkt: VideoPacket):
@@ -268,20 +276,19 @@ class ChatClient:
         found_frame = False
         packets_to_resend = []
         frame_num = pkt.frame_num
-        
-        # Search through history, making sure to acquire the lock first:
+
+        # Search history with O(1) lookup using frame number arithmetic
         with self.frames_history_lock:
             if not self.sent_frames_history:
                 print(f"[!] Request for {frame_num} denied: History is empty.")
                 return
-            
-            # Since the frame numbers in the history are contigious, we can use this trick for O(1) lookup
-            left_endpoint_frame_num = self.sent_frames_history[0][0] 
+
+            # Since frame numbers are contiguous, calculate index directly
+            # e.g., if history starts at frame 100 and we want frame 105, it's at index 5
+            left_endpoint_frame_num = self.sent_frames_history[0][0]
             idx = frame_num - left_endpoint_frame_num
             if 0 <= idx < len(self.sent_frames_history):
-                # Double checking because I'm paranoid
                 if self.sent_frames_history[idx][0] == frame_num:
-                    print("FOUND REQUESTED FRAME")
                     found_frame = True
                     packets_to_resend = self.sent_frames_history[idx][1]
         
@@ -371,7 +378,6 @@ class ChatClient:
             ============ Returns =========
             @return None. Sends a retransmit request packet over the socket to our peer
             """
-            print("SENDING RETRANSMIT ReQUEST fr")
             pkt = VideoPacket(msg_type=MSG_TYPE_RETRANSMIT_REQ, frame_num=frame_num)
             self.socket.sendto(pkt.to_bytes(), self.peer_address)
         
@@ -381,11 +387,7 @@ class ChatClient:
 
             try:
             
-                # Check if we reached timeout on any frame   
                 frames_to_check = set(self.frame_first_packet_time.keys())
-                # if self.next_expected_frame not in frames_to_check:
-                #     frames_to_check.add(self.next_expected_frame)
-                #     self.frame_first_packet_time[self.next_expected_frame] = time.time()
                     
                 for frame_num in frames_to_check:
                     time_elapsed = time.time() - self.frame_first_packet_time[frame_num]  
@@ -411,42 +413,35 @@ class ChatClient:
                             del self.frame_first_packet_time[frame_num]
                             self.next_expected_frame += 1
             except Exception as e:
-                print("error in retransmit request loop")
                 pass
-            print("NEXT EXPECTED FRAME: ", self.next_expected_frame)
-            print("Ready frames : ", [x[0] for x in self.ready_frames])
             time.sleep(0.1)
                 
         
     def display_frames_thread(self):
         """
-        Description: Display loop. It checks if there are any frames ready on the heap to be displayed.
-                     if the smallest frame number on the heap is not equal to the next_expected frame,
-                     then we have to wait until we have the next frame ready to be displayed.
-        @param None
-        @return None. Displays frame
+        Continuously displays ready frames in order. If a frame is missing for too long,
+        it is skipped to prevent blocking the video stream.
         """
         while self.running.is_set():
-
-            if (not self.key_exchange_complete.is_set()):
+            if not self.key_exchange_complete.is_set():
                 continue
 
+            # Display all ready frames that are due (handles out-of-order arrival)
             while len(self.ready_frames) != 0 and self.ready_frames[0][0] <= self.next_expected_frame:
                 frame_num, frame_data = heapq.heappop(self.ready_frames)
-                self.gui_callback("peerimage",frame_data)
+                self.gui_callback("peerimage", frame_data)
                 self.next_expected_frame += 1
                 self.last_frame_update = time.time()
-                
-                
+
+            # Skip frame if we've been waiting too long (prevents stalling)
             if self.last_frame_update:
                 time_elapsed = time.time() - self.last_frame_update
                 if time_elapsed >= (self.frame_timeout * self.max_retransmits):
                     self.next_expected_frame += 1
                     self.last_frame_update = time.time()
 
-            
-                
-        
+
+
     def accept_call(self):
         """
         Description: Called by the GUI when the user accepts an incoming call.
@@ -465,29 +460,12 @@ class ChatClient:
         self.socket.sendto(nack_pkt.to_bytes(), self.peer_address)
 
 
-
-
     def send_hang_up(self):
             hangup_pkt = VideoPacket(MSG_TYPE_HANGUP)
             self.socket.sendto(hangup_pkt.to_bytes(), self.peer_address)
 
 
-    # def hang_up(self):
-    #     """
-    #     Description: Stops sending and receiving. Called by the GUI when the user hangs up the call, OR called internally when we receive a HANGUP packet from the peer.
-    #     @param sendpack (bool): Whether to send a HANGUP packet to the peer
-    #     """
-    #     self.reset_ds()
     
-
-    #     self.key_exchange_complete.clear()
-    #     # self.sender_thread.join(timeout=1)
-    #     # self.check_retransmit_req_thread.join(timeout=1)
-        # self.display_thread.join(timeout=1)
-
-
-
-
     def _initiator_start_key_exchange(self):
         """
         Description: This function is called once the initiator receives a HELLO_ACK back. It generates parameters

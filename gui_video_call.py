@@ -1,3 +1,12 @@
+"""
+gui_video_call.py     Ahmed Al Sunbati, James Underwood     Nov 13th, 2025
+Description: Tkinter-based GUI for encrypted peer-to-peer video calling application.
+             Provides screens for managing contacts, initiating/receiving calls, and
+             displaying video streams.
+
+Citations: ChatGPT for writing the description (above) and comments/documentation in a nice format
+"""
+
 import tkinter as tk
 from tkinter import messagebox
 from dataclasses import dataclass
@@ -9,7 +18,7 @@ from ChatClient import ChatClient
 from PIL import Image, ImageTk
 import sys
 
-
+# ASCII art displayed on incoming call screen
 INCOMING_CALL_ASCII = [
     "▄▄ ▄▄  ▄▄  ▄▄▄▄  ▄▄▄  ▄▄   ▄▄ ▄▄ ▄▄  ▄▄  ▄▄▄▄ ",
     "██ ███▄██ ██▀▀▀ ██▀██ ██▀▄▀██ ██ ███▄██ ██ ▄▄ ",
@@ -27,11 +36,13 @@ VIDEO_SURFACE_HEIGHT = 360
 
 @dataclass
 class Contact:
+    """Represents a contact with a name and IP address."""
     name: str
     ip_address: str
 
 
 def load_contacts():
+    """Load contacts from the contacts file. Returns empty list if file doesn't exist."""
     contacts = []
     if not os.path.exists(CONTACTS_FILE):
         return contacts
@@ -45,6 +56,7 @@ def load_contacts():
 
 
 def search_contact_by_ip(ip_address: str):
+    """Search for a contact by IP address. Returns None if not found."""
     contacts = load_contacts()
     for contact in contacts:
         if contact.ip_address == ip_address:
@@ -53,11 +65,24 @@ def search_contact_by_ip(ip_address: str):
 
 
 def append_contact(contact: Contact):
+    """Append a new contact to the contacts file."""
     with open(CONTACTS_FILE, "a") as f:
         f.write(f"{contact.name},{contact.ip_address}\n")
 
 
 def make_app():
+    """
+    Create and configure the main Tkinter application with all screens:
+    - Home: Main menu with options to initiate calls or view contacts
+    - Contacts: List and manage saved contacts
+    - Add Contact: Form to add new contacts
+    - Incoming: Accept/decline incoming calls
+    - Initiate: Display when initiating outgoing calls
+    - Call: Active video call screen
+
+    Returns:
+        Configured Tk root window with logic_callback and set_chat_client methods
+    """
     root = tk.Tk()
     root.title("Video Call App")
     root.geometry("800x400")
@@ -82,19 +107,20 @@ def make_app():
     for frame in (home_frame, contacts_frame, add_contact_frame, incoming_frame, initiate_frame, call_frame):
         frame.grid(row=0, column=0, sticky="nsew")
 
-
-
-
     def set_chat_client(client: ChatClient):
+        """Set the ChatClient instance after app creation."""
         nonlocal chat_client
         chat_client = client
-        
 
     def logic_callback(msg: str, image_data: bytes = None):
+        """
+        Callback function invoked by ChatClient to handle network events.
+        Processes incoming calls, video frames, call state changes, etc.
 
-        # root.after(0, handle_message_on_main_thread, msg)
-
-
+        Args:
+            msg: Message type/command string from ChatClient
+            image_data: Optional video frame data (for "peerimage" messages)
+        """
 
         if msg.startswith("incoming call,"):
             _, addr = msg.split(",", 1)
@@ -114,7 +140,6 @@ def make_app():
 
         elif msg == "hello_ack_received":
             # The initiator received HELLO_ACK, simulate the answer
-            # root.after(0, lambda: simulate_answer())
             show_active_call(current_outgoing_contact, "Outgoing call connected.")
 
         elif msg.startswith("peerimage"):
@@ -123,35 +148,22 @@ def make_app():
             # Convert the image data back to PhotoImage
             img = Image.open(image_data_bytes)
             photo = ImageTk.PhotoImage(img)
-            print("attempting to display image")
-            
-            # photo = tk.PhotoImage(data=image_data_bytes.read())
-            
 
             root.after(0, lambda p=photo: update_video_surface(p))
 
         
         elif msg == "hangupreceived":
             messagebox.showinfo("Call", "Call hung up.")
-            print("about to sys.exit()")
-            root.after(0, lambda: sys.exit())             # root.after(0, end_active_call)
-            # active_call_contact = None
-            # chat_client.reset_ds()
-            # # Clear video surfaces
-            # update_video_surface(None)
-            # update_self_video_surface(None)
-            # show_frame(home_frame)
-
-            
+            root.after(0, lambda: sys.exit())
 
         elif msg == "nack":
             messagebox.showinfo("Call", "Your call was declined.")
             root.after(0, lambda: show_frame(home_frame))
 
 
-
     # ---------- Helper to switch screens ----------
     def show_frame(frame):
+        """Raise the specified frame to make it visible."""
         frame.tkraise()
 
     # ========== HOME SCREEN ==========
@@ -212,8 +224,6 @@ def make_app():
         chooser.focus_set()
 
 
-
-
     btn_initiate = tk.Button(home_frame, text="Initiate call",
                              command=on_initiate_call)
     btn_contacts = tk.Button(home_frame, text="View Contacts",
@@ -236,6 +246,7 @@ def make_app():
                                  fg="gray")
 
     def update_contacts_list():
+        """Refresh the contacts listbox with current contacts from file."""
         contacts_listbox.delete(0, tk.END)
         contacts = load_contacts()
         if not contacts:
@@ -343,7 +354,6 @@ def make_app():
         show_active_call(incoming_call_contact, "Incoming call connected.")
 
     def on_decline():
-        # messagebox.showinfo("Call", "Call successfully declined.")
         chat_client.decline_call()
         show_frame(home_frame)
 
@@ -359,6 +369,7 @@ def make_app():
     btn_back_home_from_incoming.pack(side="left", padx=10, pady=10)
 
     def show_incoming_call(contact: Contact):
+        """Display the incoming call screen for the specified contact."""
         nonlocal incoming_call_contact
         incoming_call_contact = contact
         incoming_info_label.config(
@@ -391,6 +402,7 @@ def make_app():
     btn_end_call.pack(side="left", padx=10, pady=10)
 
     def show_initiate_call(contact: Contact):
+        """Initiate an outgoing call to the specified contact and display calling screen."""
         nonlocal current_outgoing_contact
         current_outgoing_contact = contact
         initiate_contact_label.config(
@@ -398,7 +410,7 @@ def make_app():
         )
         initiate_status_label.config(text=f"{contact.name} has been rung", fg="green")
 
-
+        # Send HELLO packet to initiate connection
         client.send_hello(contact.ip_address, 3456)
         show_frame(initiate_frame)
 
@@ -415,40 +427,29 @@ def make_app():
     video_surface = tk.Label(call_frame, bd=2, relief="sunken")
     video_surface.pack(padx=10, pady=10)
 
-    self_video_surface = tk.Label(call_frame, bd=2, relief="sunken")
-    self_video_surface.pack(padx=10, pady=5)
-    
-
-    tk.Label(call_frame,
-             text="Live video stream renders in the window above.",
-             fg="gray").pack(pady=(0, 10), padx=10, anchor="w")
-
     def update_video_surface(image=None):
-        """Update the video surface with a provided frame or a black placeholder."""
+        """
+        Update the video surface with a new frame.
+
+        Args:
+            image: PhotoImage to display, or None to show black placeholder
+        """
         nonlocal video_photo
 
         if image is None:
+            # Create black placeholder when no video frame available
             photo = tk.PhotoImage(width=VIDEO_SURFACE_WIDTH, height=VIDEO_SURFACE_HEIGHT)
             photo.put("black", to=(0, 0, VIDEO_SURFACE_WIDTH, VIDEO_SURFACE_HEIGHT))
         else:
             photo = image
 
         video_surface.configure(image=photo)
-        video_surface.image = photo
+        video_surface.image = photo  # Keep reference to prevent garbage collection
         video_photo = photo
 
-    def update_self_video_surface(image=None):
-        """Update the self video surface with a provided frame or a black placeholder."""
-        if image is None:
-            photo = tk.PhotoImage(width=160, height=90)
-            photo.put("black", to=(0, 0, 160, 90))
-        else:
-            photo = image
-
-        self_video_surface.configure(image=photo)
-        self_video_surface.image = photo
 
     def show_active_call(contact: Contact, status_text: str):
+        """Display the active call screen with video surface for the specified contact."""
         nonlocal active_call_contact
         active_call_contact = contact
         call_contact_label.config(
@@ -462,18 +463,6 @@ def make_app():
         chat_client.send_hang_up()
         sys.exit()
 
-
-
-    # def end_active_call():
-    #     nonlocal active_call_contact
-    #     if active_call_contact:
-    #         messagebox.showinfo("Call", "Call hung up2.")
-    #     active_call_contact = None
-    #     chat_client.hang_up()
-    #     # Clear video surfaces
-    #     update_video_surface(None)
-    #     update_self_video_surface(None)
-    #     show_frame(home_frame)
 
     # Create a frame for the hang up button to center it
     hangup_frame = tk.Frame(call_frame)
@@ -492,9 +481,6 @@ def make_app():
     btn_hangup.pack()
 
     # Expose helpers so the networking layer can update the call UI when video frames arrive.
-    # root.render_video_frame = update_video_surface
-    # root.show_call_screen = show_active_call
-    # root.end_call_screen = end_active_call
     root.logic_callback = logic_callback
     root.set_chat_client = set_chat_client
 
