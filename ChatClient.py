@@ -214,6 +214,7 @@ class ChatClient:
         elif pkt.msg_type ==  MSG_TYPE_FRAME_DATA:
                 self._frame_data_packet_handler(pkt)            
         elif pkt.msg_type ==  MSG_TYPE_HANGUP:
+                self.hang_up()
                 self.gui_callback("hangup")
         elif pkt.msg_type ==  MSG_TYPE_NACK:
                 self.gui_callback("nack")
@@ -425,13 +426,16 @@ class ChatClient:
         nack_pkt = VideoPacket(MSG_TYPE_NACK)
         self.socket.sendto(nack_pkt.to_bytes(), self.peer_address)
 
-    def hang_up(self):
+    def hang_up(self,sendpack=False):
         """
-        Description: Called by the GUI when the user hangs up the call.
-        Currently does nothing.
+        Description: Stops sending and receiving. Called by the GUI when the user hangs up the call, OR called internally when we receive a HANGUP packet from the peer.
+        @param sendpack (bool): Whether to send a HANGUP packet to the peer
         """
-        hangup_pkt = VideoPacket(MSG_TYPE_HANGUP)
-        self.socket.sendto(hangup_pkt.to_bytes(), self.peer_address)
+        self.stop()
+        
+        if sendpack:
+            hangup_pkt = VideoPacket(MSG_TYPE_HANGUP)
+            self.socket.sendto(hangup_pkt.to_bytes(), self.peer_address)
 
 
     def _initiator_start_key_exchange(self):
