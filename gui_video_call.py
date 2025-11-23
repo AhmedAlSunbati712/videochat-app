@@ -142,7 +142,7 @@ def make_app():
             root.after(0, end_active_call)
             messagebox.showinfo("Call", "Call hung up1.")
             active_call_contact = None
-            chat_client.hang_up()
+            chat_client.reset_ds()
             # Clear video surfaces
             update_video_surface(None)
             update_self_video_surface(None)

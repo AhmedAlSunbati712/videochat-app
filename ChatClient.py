@@ -48,6 +48,23 @@ class ChatClient:
         self.check_retransmit_req_thread = threading.Thread(target=self._retransmit_request_loop, daemon=True)
         self.display_thread = threading.Thread(target=self.display_frames_thread, daemon=True)
 
+    def reset_ds(self):
+        # ======== State of the key exchange process ==========
+        self.dh_params = None
+        self.dh_private_key = None
+        self.derived_key = None 
+        # ========== State to handle retransmit requests ============
+        self.sent_frames_history = deque(maxlen=40)
+        self.frames_history_lock = threading.Lock()
+        
+        self.frames_in_progress = {} # frame_number -> List[(sequence_number, packet_data)]
+        self.ready_frames = [] # min-heap elements: (frame_number, frame_data)
+        self.frame_first_packet_time = {} # implmenting a fifo queue. Elements of form (frame_number, time of first packet arrival)
+        self.frame_retransmit_req_record = defaultdict(int) # frame_number -> number of retransmit requests requested
+        self.next_expected_frame = 0 # To figure out which frame we expect to receive next
+        self.last_frame_update = None
+
+    
     def start_sender_thread(self):
         """
         Description: Starts the sender thread for sending video frames.
@@ -115,7 +132,7 @@ class ChatClient:
 
         frame_num = 0
 
-        cap = cv2.VideoCapture(1, cv2.CAP_AVFOUNDATION)
+        cap = cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
         cap.set(cv2.CAP_PROP_FPS, 60)
         while self.running.is_set():
 
@@ -453,7 +470,8 @@ class ChatClient:
         Description: Stops sending and receiving. Called by the GUI when the user hangs up the call, OR called internally when we receive a HANGUP packet from the peer.
         @param sendpack (bool): Whether to send a HANGUP packet to the peer
         """
-
+        self.reset_ds()
+    
 
         self.key_exchange_complete.clear()
         # self.sender_thread.join(timeout=1)
