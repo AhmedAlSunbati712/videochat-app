@@ -465,7 +465,8 @@ class ChatClient:
 
 
     def send_hang_up(self):
-            hangup_pkt = VideoPacket(MSG_TYPE_HANGUP,payload=hangupmessage)
+            hangupmessage_encrypted = DH.encrypt(hangupmessage)
+            hangup_pkt = VideoPacket(MSG_TYPE_HANGUP,payload=hangupmessage_encrypted)
             self.socket.sendto(hangup_pkt.to_bytes(), self.peer_address)
 
 
