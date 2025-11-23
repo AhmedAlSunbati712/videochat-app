@@ -258,9 +258,7 @@ class ChatClient:
                 self._frame_data_packet_handler(pkt)            
         elif pkt.msg_type ==  MSG_TYPE_HANGUP:
                 print("[!] handle_packet: Received HANGUP.")
-                print("payload",pkt.payload)
                 if (pkt.payload == hangupmessage):
-                    print("valid")
                     self.gui_callback("hangupreceived")
         elif pkt.msg_type ==  MSG_TYPE_NACK:
                 self.gui_callback("nack")
