@@ -132,7 +132,8 @@ def make_app():
 
         
         elif msg == "hangupreceived":
-            messagebox.showinfo("Call", "Call hung up1.")
+            # messagebox.showinfo("Call", "Call hung up.")
+            print("CALL HUNG UP")
             sys.exit()
             # root.after(0, end_active_call)
             # active_call_contact = None
