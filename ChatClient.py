@@ -18,7 +18,8 @@ import math
 import heapq
 from collections import deque, defaultdict
 
-hangupmessage = 0x01AB
+hangup_code = 0x01AB
+hangupmessage = struct.pack("!H", hangup_code)
 class ChatClient:
     """
     UDP-based video chat client with end-to-end encryption.
