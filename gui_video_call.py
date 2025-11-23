@@ -7,6 +7,7 @@ import io
 from io import BytesIO
 from ChatClient import ChatClient
 from PIL import Image, ImageTk
+import sys
 
 
 INCOMING_CALL_ASCII = [
@@ -129,24 +130,17 @@ def make_app():
 
             root.after(0, lambda p=photo: update_video_surface(p))
 
-        elif msg.startswith("selfimage"):
-            # Self video frame captured
-            # _, image = msg.split(",", 1)
-            # photo = tk.PhotoImage(data=image)
-            image_data_bytes = io.BytesIO(image_data)
-            photo = tk.PhotoImage(data=image_data_bytes.read())
-
-            root.after(0, lambda p=photo: update_self_video_surface(p))
         
         elif msg == "hangupreceived":
-            root.after(0, end_active_call)
-            messagebox.showinfo("Call", "Call hung up1.")
-            active_call_contact = None
-            chat_client.reset_ds()
-            # Clear video surfaces
-            update_video_surface(None)
-            update_self_video_surface(None)
-            show_frame(home_frame)
+            sys.exit()
+            # root.after(0, end_active_call)
+            # # messagebox.showinfo("Call", "Call hung up1.")
+            # active_call_contact = None
+            # chat_client.reset_ds()
+            # # Clear video surfaces
+            # update_video_surface(None)
+            # update_self_video_surface(None)
+            # show_frame(home_frame)
 
             
 
@@ -466,20 +460,20 @@ def make_app():
 
     def hangup_send():
         chat_client.send_hang_up()
+        sys.exit()
 
-        end_active_call()
 
 
-    def end_active_call():
-        nonlocal active_call_contact
-        if active_call_contact:
-            messagebox.showinfo("Call", "Call hung up2.")
-        active_call_contact = None
-        chat_client.hang_up()
-        # Clear video surfaces
-        update_video_surface(None)
-        update_self_video_surface(None)
-        show_frame(home_frame)
+    # def end_active_call():
+    #     nonlocal active_call_contact
+    #     if active_call_contact:
+    #         messagebox.showinfo("Call", "Call hung up2.")
+    #     active_call_contact = None
+    #     chat_client.hang_up()
+    #     # Clear video surfaces
+    #     update_video_surface(None)
+    #     update_self_video_surface(None)
+    #     show_frame(home_frame)
 
     # Create a frame for the hang up button to center it
     hangup_frame = tk.Frame(call_frame)

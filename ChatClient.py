@@ -138,7 +138,7 @@ class ChatClient:
 
         self.frame_num = 0
 
-        cap = cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
+        cap = cv2.VideoCapture(1, cv2.CAP_AVFOUNDATION)
         cap.set(cv2.CAP_PROP_FPS, 60)
         while self.running.is_set():
 
@@ -165,7 +165,7 @@ class ChatClient:
             frame_size = len(frame_bytes)
             frame_pkts_count = math.ceil(frame_size / 1400)
             packets_for_this_frame = [] # Need to store to hold in history
-            print(f"[*] Captured frame: {frame_num}")
+            print(f"[*] Captured frame: {self.frame_num}")
             print(f"[*] Frame count: {frame_pkts_count}")
             
             # Send a frame in chunks
@@ -175,17 +175,17 @@ class ChatClient:
                 chunk_bytes_encrypted = DH.encrypt(self.derived_key,chunk_bytes_unencrypted)
                 
                 # Create the packet
-                chunk_pkt = VideoPacket(msg_type=MSG_TYPE_FRAME_DATA, frame_num=frame_num, seq_num=i, total_packets=frame_pkts_count, payload=chunk_bytes_encrypted)
+                chunk_pkt = VideoPacket(msg_type=MSG_TYPE_FRAME_DATA, frame_num=self.frame_num, seq_num=i, total_packets=frame_pkts_count, payload=chunk_bytes_encrypted)
                 packets_for_this_frame.append(chunk_pkt)
                 
                 self.socket.sendto(chunk_pkt.to_bytes(), self.peer_address) # Send immediately
             
             # Use a mutex lock to store the packets for this frame
             with self.frames_history_lock:
-                self.sent_frames_history.append((frame_num, packets_for_this_frame))
+                self.sent_frames_history.append((self.frame_num, packets_for_this_frame))
 
-            frame_num += 1
-            print(f"[*] Captured and sent frame {frame_num}")
+            self.frame_num += 1
+            print(f"[*] Captured and sent frame {self.frame_num}")
             self.gui_callback(f"selfimage,{frame_bytes}")
 
 
@@ -246,7 +246,6 @@ class ChatClient:
         elif pkt.msg_type ==  MSG_TYPE_FRAME_DATA:
                 self._frame_data_packet_handler(pkt)            
         elif pkt.msg_type ==  MSG_TYPE_HANGUP:
-                self.hang_up()
                 self.gui_callback("hangupreceived")
         elif pkt.msg_type ==  MSG_TYPE_NACK:
                 self.gui_callback("nack")
@@ -473,17 +472,17 @@ class ChatClient:
             self.socket.sendto(hangup_pkt.to_bytes(), self.peer_address)
 
 
-    def hang_up(self):
-        """
-        Description: Stops sending and receiving. Called by the GUI when the user hangs up the call, OR called internally when we receive a HANGUP packet from the peer.
-        @param sendpack (bool): Whether to send a HANGUP packet to the peer
-        """
-        self.reset_ds()
+    # def hang_up(self):
+    #     """
+    #     Description: Stops sending and receiving. Called by the GUI when the user hangs up the call, OR called internally when we receive a HANGUP packet from the peer.
+    #     @param sendpack (bool): Whether to send a HANGUP packet to the peer
+    #     """
+    #     self.reset_ds()
     
 
-        self.key_exchange_complete.clear()
-        # self.sender_thread.join(timeout=1)
-        # self.check_retransmit_req_thread.join(timeout=1)
+    #     self.key_exchange_complete.clear()
+    #     # self.sender_thread.join(timeout=1)
+    #     # self.check_retransmit_req_thread.join(timeout=1)
         # self.display_thread.join(timeout=1)
 
 
