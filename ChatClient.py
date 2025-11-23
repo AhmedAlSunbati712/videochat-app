@@ -219,7 +219,7 @@ class ChatClient:
             # List of message types that should be encrypted
             encrypted_types = [
                 MSG_TYPE_FRAME_DATA,
-                # MSG_TYPE_HANGUP,
+                MSG_TYPE_HANGUP,
             ]
             
             if pkt.msg_type in encrypted_types:
@@ -255,7 +255,9 @@ class ChatClient:
         elif pkt.msg_type ==  MSG_TYPE_FRAME_DATA:
                 self._frame_data_packet_handler(pkt)            
         elif pkt.msg_type ==  MSG_TYPE_HANGUP:
-                self.gui_callback("hangupreceived")
+                decoded = DH.decrypt(self.derived_key, pkt.payload)
+                if (decoded == "Hangup"):
+                    self.gui_callback("hangupreceived")
         elif pkt.msg_type ==  MSG_TYPE_NACK:
                 self.gui_callback("nack")
         elif pkt.msg_type ==  MSG_TYPE_RETRANSMIT_REQ:
@@ -461,7 +463,7 @@ class ChatClient:
 
 
     def send_hang_up(self):
-            hangup_pkt = VideoPacket(MSG_TYPE_HANGUP)
+            hangup_pkt = VideoPacket(MSG_TYPE_HANGUP,payload="Hangup")
             self.socket.sendto(hangup_pkt.to_bytes(), self.peer_address)
 
 
