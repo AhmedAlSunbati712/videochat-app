@@ -153,12 +153,19 @@ def make_app():
 
         
         elif msg == "hangupreceived":
-            messagebox.showinfo("Call", "Call hung up.")
-            root.after(0, lambda: sys.exit())
+            def on_hangup():
+                messagebox.showinfo("Call", "Call hung up.")
+                # root.destroy() is cleaner than sys.exit() inside Tk
+                root.destroy()
+
+            root.after(0, on_hangup)
 
         elif msg == "nack":
-            messagebox.showinfo("Call", "Your call was declined.")
-            root.after(0, lambda: show_frame(home_frame))
+            def on_nack():
+                messagebox.showinfo("Call", "Your call was declined.")
+                show_frame(home_frame)
+
+            root.after(0, on_nack)
 
 
     # ---------- Helper to switch screens ----------
