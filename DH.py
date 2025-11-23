@@ -2,7 +2,7 @@
 DH.py     Ahmed Al Sunbati     Nov 13th, 2025
 Description: Helper functions for performing Diffie-Hellman key exchange
 
-Citations: 
+Citations: ChatGPT for comments/documentation in a nice format
 """
 
 import os
