@@ -110,11 +110,18 @@ class ChatClient:
         """
         Description: Used for sending video frame packets
         """
+
+
+
         frame_num = 0
 
         cap = cv2.VideoCapture(1, cv2.CAP_AVFOUNDATION)
         cap.set(cv2.CAP_PROP_FPS, 60)
         while self.running.is_set():
+
+            if (not self.key_exchange_complete.is_set()):
+                continue
+
             ret, frame = cap.read()
             if not ret:
                 raise RuntimeError("[!] Failed to capture frame")
@@ -179,7 +186,7 @@ class ChatClient:
             # List of message types that should be encrypted
             encrypted_types = [
                 MSG_TYPE_FRAME_DATA,
-                MSG_TYPE_HANGUP,
+                # MSG_TYPE_HANGUP,
             ]
             
             if pkt.msg_type in encrypted_types:
@@ -214,7 +221,7 @@ class ChatClient:
         elif pkt.msg_type ==  MSG_TYPE_FRAME_DATA:
                 self._frame_data_packet_handler(pkt)            
         elif pkt.msg_type ==  MSG_TYPE_HANGUP:
-                self.hang_up()
+                self.hang_up(False)
                 self.gui_callback("hangupreceived")
         elif pkt.msg_type ==  MSG_TYPE_NACK:
                 self.gui_callback("nack")
@@ -345,6 +352,9 @@ class ChatClient:
             self.socket.sendto(pkt.to_bytes(), self.peer_address)
         
         while self.running.is_set():
+            if (not self.key_exchange_complete.is_set()):
+                continue
+
             try:
             
                 # Check if we reached timeout on any frame   
@@ -393,6 +403,10 @@ class ChatClient:
         @return None. Displays frame
         """
         while self.running.is_set():
+
+            if (not self.key_exchange_complete.is_set()):
+                continue
+
             while len(self.ready_frames) != 0 and self.ready_frames[0][0] <= self.next_expected_frame:
                 frame_num, frame_data = heapq.heappop(self.ready_frames)
                 self.gui_callback("peerimage",frame_data)
@@ -426,21 +440,26 @@ class ChatClient:
         nack_pkt = VideoPacket(MSG_TYPE_NACK)
         self.socket.sendto(nack_pkt.to_bytes(), self.peer_address)
 
-    def hang_up(self,sendpack=False):
+
+
+
+    def send_hang_up(self):
+            hangup_pkt = VideoPacket(MSG_TYPE_HANGUP)
+            self.socket.sendto(hangup_pkt.to_bytes(), self.peer_address)
+
+
+    def hang_up(self):
         """
         Description: Stops sending and receiving. Called by the GUI when the user hangs up the call, OR called internally when we receive a HANGUP packet from the peer.
         @param sendpack (bool): Whether to send a HANGUP packet to the peer
         """
         
-        if sendpack:
-            hangup_pkt = VideoPacket(MSG_TYPE_HANGUP)
-            self.socket.sendto(hangup_pkt.to_bytes(), self.peer_address)
 
-        self.running.clear()
-        # self.receiver_thread.join(timeout=1)
-        self.sender_thread.join(timeout=1)
-        self.check_retransmit_req_thread.join(timeout=1)
-        self.display_thread.join(timeout=1)
+
+        self.key_exchange_complete.clear()
+        # self.sender_thread.join(timeout=1)
+        # self.check_retransmit_req_thread.join(timeout=1)
+        # self.display_thread.join(timeout=1)
 
 
 

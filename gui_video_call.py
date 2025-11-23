@@ -140,9 +140,9 @@ def make_app():
         
         elif msg == "hangupreceived":
             root.after(0, end_active_call)
-            messagebox.showinfo("Call", "Call hung up.")
+            messagebox.showinfo("Call", "Call hung up1.")
             active_call_contact = None
-            chat_client.hang_up(False)
+            chat_client.hang_up()
             # Clear video surfaces
             update_video_surface(None)
             update_self_video_surface(None)
@@ -467,9 +467,10 @@ def make_app():
     def end_active_call():
         nonlocal active_call_contact
         if active_call_contact:
-            messagebox.showinfo("Call", "Call hung up.")
+            messagebox.showinfo("Call", "Call hung up2.")
         active_call_contact = None
-        chat_client.hang_up(True)
+        chat_client.send_hang_up()
+        chat_client.hang_up()
         # Clear video surfaces
         update_video_surface(None)
         update_self_video_surface(None)
