@@ -437,15 +437,22 @@ def make_app():
         nonlocal video_photo
 
         if image is None:
-            # Create black placeholder when no video frame available
-            photo = tk.PhotoImage(width=VIDEO_SURFACE_WIDTH, height=VIDEO_SURFACE_HEIGHT)
-            photo.put("black", to=(0, 0, VIDEO_SURFACE_WIDTH, VIDEO_SURFACE_HEIGHT))
+            # Show simple text when no video/key is ready
+            video_surface.configure(
+                image='',
+                text="establishing private key ...",
+                fg="white",
+                bg="black",
+                font=("Arial", 12, "bold"),
+                width=VIDEO_SURFACE_WIDTH,  # in pixels not respected for Label, but kept
+                height=VIDEO_SURFACE_HEIGHT
+            )
+            video_surface.image = None
+            video_photo = None
         else:
-            photo = image
-
-        video_surface.configure(image=photo)
-        video_surface.image = photo  # Keep reference to prevent garbage collection
-        video_photo = photo
+            video_surface.configure(image=image, text='')
+            video_surface.image = image  # Keep reference to prevent garbage collection
+            video_photo = image
 
 
     def show_active_call(contact: Contact, status_text: str):

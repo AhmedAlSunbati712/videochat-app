@@ -464,7 +464,6 @@ class ChatClient:
 
     def send_hang_up(self):
             hangupmessage_encrypted = DH.encrypt(self.derived_key, hangupmessage)
-            print(hangupmessage_encrypted)
             hangup_pkt = VideoPacket(MSG_TYPE_HANGUP,payload=hangupmessage_encrypted)
             self.socket.sendto(hangup_pkt.to_bytes(), self.peer_address)
 
@@ -544,6 +543,12 @@ class ChatClient:
         self.key_exchange_complete.set()
 
         print("[+] KEY EXCHANGE COMPLETE")
+        # Notify GUI that key exchange finished so it can update overlays/status
+        try:
+            if self.gui_callback:
+                self.gui_callback("key_exchange_complete")
+        except Exception:
+            pass
         self.start_sender_thread()
 
 
