@@ -464,12 +464,17 @@ def make_app():
         update_video_surface()  # Default to black placeholder until frames arrive
         show_frame(call_frame)
 
+    def hangup_send():
+        chat_client.send_hang_up()
+
+        end_active_call()
+
+
     def end_active_call():
         nonlocal active_call_contact
         if active_call_contact:
             messagebox.showinfo("Call", "Call hung up2.")
         active_call_contact = None
-        chat_client.send_hang_up()
         chat_client.hang_up()
         # Clear video surfaces
         update_video_surface(None)
@@ -483,7 +488,7 @@ def make_app():
     btn_hangup = tk.Button(
         hangup_frame,
         text="Hang Up",
-        command=end_active_call,
+        command=hangup_send,
         bg="red",
         fg="black",
         font=("Arial", 12, "bold"),

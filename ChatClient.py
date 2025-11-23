@@ -221,7 +221,7 @@ class ChatClient:
         elif pkt.msg_type ==  MSG_TYPE_FRAME_DATA:
                 self._frame_data_packet_handler(pkt)            
         elif pkt.msg_type ==  MSG_TYPE_HANGUP:
-                self.hang_up(False)
+                self.hang_up()
                 self.gui_callback("hangupreceived")
         elif pkt.msg_type ==  MSG_TYPE_NACK:
                 self.gui_callback("nack")
@@ -453,7 +453,6 @@ class ChatClient:
         Description: Stops sending and receiving. Called by the GUI when the user hangs up the call, OR called internally when we receive a HANGUP packet from the peer.
         @param sendpack (bool): Whether to send a HANGUP packet to the peer
         """
-        
 
 
         self.key_exchange_complete.clear()
