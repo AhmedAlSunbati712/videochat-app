@@ -147,7 +147,7 @@ class ChatClient:
         self.frame_num = 0
 
         # Open camera (device 1) with macOS-specific backend
-        cap = cv2.VideoCapture(1, cv2.CAP_AVFOUNDATION)
+        cap = cv2.VideoCapture(0, cv2.CAP_AVFOUNDATION)
         cap.set(cv2.CAP_PROP_FPS, 60)
 
         while self.running.is_set():
